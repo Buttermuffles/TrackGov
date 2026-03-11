@@ -15,6 +15,7 @@ import { DocStatusBadge, PriorityBadge, ClassificationBadge } from '@/components
 import { format, differenceInDays } from 'date-fns'
 import { formatFileSize } from '@/lib/utils'
 import type { RoutingAction } from '@/types'
+import { toast } from 'sonner'
 import {
   ArrowLeft, ArrowRight, Send, MessageSquare, Upload, Printer,
   QrCode, CheckCircle, Pause, RotateCcw, MoreHorizontal,
@@ -67,6 +68,7 @@ export default function DocumentDetail() {
     })
     setShowForwardDialog(false)
     setFwdOffice(''); setFwdUser(''); setFwdAction('Forwarded'); setFwdRemarks('')
+    toast.success('Document Routed', { description: `${doc.trackingCode} has been ${fwdAction.toLowerCase()}` })
   }
 
   const handleAddRemark = () => {
@@ -74,6 +76,7 @@ export default function DocumentDetail() {
     addRemark(doc.id, { documentId: doc.id, userId: user.id, content: remarkText, isInternal: remarkInternal, createdAt: new Date() })
     setShowRemarkDialog(false)
     setRemarkText(''); setRemarkInternal(false)
+    toast.success('Remark Added')
   }
 
   return (
