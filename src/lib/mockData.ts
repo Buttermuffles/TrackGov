@@ -26,6 +26,9 @@ export const users: User[] = [
   { id: 'usr-12', employeeId: 'EMP-012', firstName: 'Teresa', lastName: 'Bautista', email: 'teresa.b@trackgov.gov.ph', officeId: 'off-5', role: 'Staff', position: 'Finance Analyst', isActive: true, lastLogin: new Date('2026-03-10T15:00:00'), createdAt: new Date('2024-06-01') },
   { id: 'usr-13', employeeId: 'EMP-013', firstName: 'Fernando', lastName: 'Gonzales', email: 'fernando.g@trackgov.gov.ph', officeId: 'off-1', role: 'Admin', position: 'Executive Assistant', isActive: true, lastLogin: new Date('2026-03-11T08:00:00'), createdAt: new Date('2024-01-15') },
   { id: 'usr-14', employeeId: 'EMP-014', firstName: 'Carmen', lastName: 'Perez', email: 'carmen.p@trackgov.gov.ph', officeId: 'off-6', role: 'Staff', position: 'Planning Assistant', isActive: false, lastLogin: new Date('2026-01-15T10:00:00'), createdAt: new Date('2024-07-01') },
+  // demo users for UI previews
+  { id: 'usr-demo1', employeeId: 'EMP-999', firstName: 'Demo', lastName: 'UserA', email: 'demo1@trackgov.gov.ph', officeId: 'off-2', role: 'Staff', position: 'Demo Assistant', isActive: true, createdAt: new Date() },
+  { id: 'usr-demo2', employeeId: 'EMP-998', firstName: 'Demo', lastName: 'UserB', email: 'demo2@trackgov.gov.ph', officeId: 'off-5', role: 'Staff', position: 'Demo Clerk', isActive: true, createdAt: new Date() },
 ]
 
 const d = (s: string) => new Date(s)
