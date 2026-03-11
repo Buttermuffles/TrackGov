@@ -366,10 +366,10 @@ export default function Routing() {
             {fwdOffice && (
               <div className="space-y-2">
                 <Label>Assign To Person (optional)</Label>
-                <Select value={fwdUser} onValueChange={setFwdUser}>
+                <Select value={fwdUser || "none"} onValueChange={v => setFwdUser(v === "none" ? "" : v)}>
                   <SelectTrigger><SelectValue placeholder="Auto-assign to office..." /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassigned</SelectItem>
+                    <SelectItem value="none">Unassigned</SelectItem>
                     {users.filter(u => u.officeId === fwdOffice && u.isActive).map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} — {u.position}</SelectItem>)}
                   </SelectContent>
                 </Select>

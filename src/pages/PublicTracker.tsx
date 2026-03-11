@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
 import { format } from 'date-fns'
+import { toast } from 'sonner'
+import { isRateLimited } from '@/lib/rateLimit'
 import { Search, FileSearch, Clock, Fingerprint, ArrowRight, ShieldCheck } from 'lucide-react'
 
 export default function PublicTracker() {
@@ -16,7 +18,25 @@ export default function PublicTracker() {
   const doc = searched ? documents.find(d => d.trackingCode.toLowerCase() === trackingCode.toLowerCase().trim()) : null
   const getOfficeName = (oid: string) => offices.find(o => o.id === oid)?.name || oid
   const getOfficeCode = (oid: string) => offices.find(o => o.id === oid)?.code || oid
-  const handleSearch = (e: React.FormEvent) => { e.preventDefault(); setSearched(true) }
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    const code = trackingCode.trim()
+    if (!code) {
+      toast.error('Enter a tracking code to continue.')
+      return
+    }
+
+    // Public endpoint guard: basic client throttling to reduce abuse from UI.
+    const limited = isRateLimited('public-tracker-search', 10, 60_000)
+    if (limited.limited) {
+      const retrySec = Math.ceil(limited.retryAfterMs / 1000)
+      toast.error('Too many requests', { description: `Please try again in ${retrySec}s.` })
+      return
+    }
+
+    setSearched(true)
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -34,6 +54,19 @@ export default function PublicTracker() {
       <div className="max-w-2xl mx-auto px-4 py-8">
         {searched && !doc && <Card><CardContent className="py-12 text-center"><FileSearch className="w-16 h-16 text-slate-200 mx-auto mb-4" /><h2 className="text-lg font-bold text-slate-900 mb-1">Document Not Found</h2><p className="text-sm text-slate-500">No document matches "<b>{trackingCode}</b>".</p></CardContent></Card>}
         {doc && <div className="space-y-4">
+          {doc.isConfidential ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg"><span className="text-blue-700 font-mono">{doc.trackingCode}</span></CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <p className="font-semibold text-slate-900">Status: Processing</p>
+                <p className="text-slate-600">Your document is being handled.</p>
+                <p className="text-xs text-slate-500">For privacy and security, details are restricted for confidential records.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
           <Card><CardHeader><div className="flex flex-wrap gap-2 mb-2"><PriorityBadge priority={doc.priority} /><DocStatusBadge status={doc.status} /></div><CardTitle className="text-lg"><span className="text-blue-700 font-mono">{doc.trackingCode}</span></CardTitle><p className="text-base font-semibold text-slate-900 mt-1">{doc.title}</p></CardHeader><CardContent className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div><span className="text-slate-400">Type:</span><br /><b>{doc.documentType}</b></div>
@@ -51,6 +84,8 @@ export default function PublicTracker() {
             {!['Completed', 'Cancelled'].includes(doc.status) && <div className="flex gap-3"><div className="flex flex-col items-center"><div className="w-2.5 h-2.5 rounded-full border-2 border-slate-200 mt-1.5" /></div><p className="text-[11px] text-slate-400 mt-1">Processing...</p></div>}
           </div></CardContent></Card>
           {doc.remarks.filter(r => !r.isInternal).length > 0 && <Card><CardHeader><CardTitle className="text-sm font-semibold">Public Notes</CardTitle></CardHeader><CardContent className="space-y-2">{doc.remarks.filter(r => !r.isInternal).map(rem => <div key={rem.id} className="p-2 bg-slate-50 rounded text-xs"><p className="text-slate-600">{rem.content}</p><p className="text-slate-400 mt-1">{format(new Date(rem.createdAt), 'MMM d, yyyy')}</p></div>)}</CardContent></Card>}
+            </>
+          )}
         </div>}
         {!searched && <div className="text-center py-12"><FileSearch className="w-20 h-20 text-slate-200 mx-auto mb-4" /><h2 className="text-lg font-bold text-slate-700 mb-1">Track Your Document</h2><p className="text-sm text-slate-500">Enter the tracking code provided when your document was received</p></div>}
       </div>
