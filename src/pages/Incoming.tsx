@@ -253,13 +253,27 @@ export default function Incoming() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Assign to Office</Label>
-                  <Select value={formData.assignToOfficeId} onValueChange={v => setFormData(f => ({ ...f, assignToOfficeId: v }))}>
+                  <Select value={formData.assignToOfficeId} onValueChange={v => setFormData(f => ({ ...f, assignToOfficeId: v, assignToUserId: '' }))}>
                     <SelectTrigger><SelectValue placeholder="Select office..." /></SelectTrigger>
                     <SelectContent>
                       {offices.map(o => (<SelectItem key={o.id} value={o.id}>{o.code} — {o.name}</SelectItem>))}
                     </SelectContent>
                   </Select>
                 </div>
+                {formData.assignToOfficeId && (
+                  <div className="space-y-2">
+                    <Label>Assign to Person (optional)</Label>
+                    <Select value={formData.assignToUserId || "none"} onValueChange={v => setFormData(f => ({ ...f, assignToUserId: v === "none" ? "" : v }))}>
+                      <SelectTrigger><SelectValue placeholder="Auto-assign to office..." /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Unassigned</SelectItem>
+                        {users
+                          .filter(u => u.officeId === formData.assignToOfficeId && u.isActive)
+                          .map(u => <SelectItem key={u.id} value={u.id}>{u.firstName} {u.lastName} — {u.position}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label>Action Required</Label>
                   <Select value={formData.action} onValueChange={v => setFormData(f => ({ ...f, action: v as RoutingAction }))}>
