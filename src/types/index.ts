@@ -1,16 +1,7 @@
 export type DocumentType =
-  | 'Letter'
-  | 'Memorandum'
-  | 'Resolution'
-  | 'Ordinance'
-  | 'Contract'
-  | 'Report'
-  | 'Request'
-  | 'Petition'
-  | 'Certificate'
-  | 'Voucher'
-  | 'Purchase Order'
-  | 'Other'
+  | 'Letter' | 'Memorandum' | 'Resolution' | 'Ordinance'
+  | 'Contract' | 'Report' | 'Request' | 'Petition'
+  | 'Certificate' | 'Voucher' | 'Purchase Order' | 'Other'
 
 export type Classification = 'Routine' | 'Priority' | 'Confidential' | 'Top Secret'
 
@@ -27,6 +18,19 @@ export type DocumentStatus =
   | 'Completed'
   | 'On Hold'
   | 'Cancelled'
+
+export type RoutingAction =
+  | 'Forwarded' | 'Returned' | 'Endorsed' | 'For Signature'
+  | 'For Review' | 'For Action' | 'For Information' | 'Approved'
+  | 'Disapproved' | 'Noted' | 'Filed'
+
+export type UserRole =
+  | 'Super Admin'
+  | 'Admin'
+  | 'Department Head'
+  | 'Records Officer'
+  | 'Staff'
+  | 'Read Only'
 
 export interface Attachment {
   id: string
@@ -46,19 +50,6 @@ export interface Remark {
   isInternal: boolean
   createdAt: Date
 }
-
-export type RoutingAction =
-  | 'Forwarded'
-  | 'Returned'
-  | 'Endorsed'
-  | 'For Signature'
-  | 'For Review'
-  | 'For Action'
-  | 'For Information'
-  | 'Approved'
-  | 'Disapproved'
-  | 'Noted'
-  | 'Filed'
 
 export interface RoutingEntry {
   id: string
@@ -102,3 +93,51 @@ export interface Document {
   qrCode?: string
 }
 
+export interface Office {
+  id: string
+  code: string
+  name: string
+  headId?: string
+  parentOfficeId?: string
+  staffCount: number
+  isActive: boolean
+  description?: string
+}
+
+export interface User {
+  id: string
+  employeeId: string
+  firstName: string
+  lastName: string
+  email: string
+  phone?: string
+  officeId: string
+  role: UserRole
+  position: string
+  signature?: string
+  isActive: boolean
+  lastLogin?: Date
+  createdAt: Date
+}
+
+export interface Notification {
+  id: string
+  userId: string
+  type: 'incoming' | 'action_required' | 'overdue' | 'system'
+  title: string
+  message: string
+  documentId?: string
+  isRead: boolean
+  createdAt: Date
+}
+
+export interface AuditEntry {
+  id: string
+  timestamp: Date
+  userId: string
+  action: string
+  documentId?: string
+  officeId?: string
+  details: string
+  ipAddress: string
+}

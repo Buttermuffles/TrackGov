@@ -1,154 +1,187 @@
-import { NavLink } from 'react-router-dom'
+import React, { useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { useAuthStore, useDocumentStore } from '@/store'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { getInitials } from '@/lib/utils'
 import {
-  LayoutDashboard,
-  Inbox,
-  Send,
-  Files,
-  Timer,
-  Repeat,
-  Map,
-  Building2,
-  Users,
-  BarChart3,
-  ListChecks,
-  Settings,
+  LayoutDashboard, FileInput, FileOutput, Files, Clock,
+  RefreshCw, Map, Building2, Users, BarChart3, ClipboardList,
+  Settings, Shield, ChevronLeft, ChevronRight, Menu, X
 } from 'lucide-react'
-import { useAuthStore } from '../../store/authStore'
 
-type Item = {
-  label: string
-  to: string
-  icon: React.ComponentType<{ className?: string }>
-  badge?: string | number
-}
-
-type Group = {
-  label: string
-  items: Item[]
-}
-
-const groups: Group[] = [
+const navGroups = [
   {
-    label: 'Overview',
-    items: [{ label: 'Dashboard', to: '/', icon: LayoutDashboard }],
-  },
-  {
-    label: 'Documents',
+    label: 'OVERVIEW',
     items: [
-      { label: 'Incoming Documents', to: '/incoming', icon: Inbox, badge: 3 },
-      { label: 'Outgoing Documents', to: '/outgoing', icon: Send },
-      { label: 'All Documents', to: '/documents', icon: Files },
-      { label: 'Pending Action', to: '/pending', icon: Timer, badge: 5 },
+      { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
     ],
   },
   {
-    label: 'Routing',
+    label: 'DOCUMENTS',
     items: [
-      { label: 'Route / Forward', to: '/routing', icon: Repeat },
-      { label: 'Routing Map', to: '/routing-map', icon: Map },
+      { to: '/incoming', icon: FileInput, label: 'Incoming Documents', badgeKey: 'incoming' as const },
+      { to: '/outgoing', icon: FileOutput, label: 'Outgoing Documents' },
+      { to: '/documents', icon: Files, label: 'All Documents' },
+      { to: '/pending', icon: Clock, label: 'Pending Action', badgeKey: 'overdue' as const },
     ],
   },
   {
-    label: 'Management',
+    label: 'ROUTING',
     items: [
-      { label: 'Offices / Departments', to: '/offices', icon: Building2 },
-      { label: 'Users', to: '/users', icon: Users },
+      { to: '/routing', icon: RefreshCw, label: 'Route / Forward' },
+      { to: '/routing-map', icon: Map, label: 'Routing Map' },
     ],
   },
   {
-    label: 'Reports',
+    label: 'MANAGEMENT',
     items: [
-      { label: 'Reports & Analytics', to: '/reports', icon: BarChart3 },
-      { label: 'Audit Trail', to: '/audit-trail', icon: ListChecks },
+      { to: '/offices', icon: Building2, label: 'Offices / Departments' },
+      { to: '/users', icon: Users, label: 'Users' },
     ],
   },
   {
-    label: 'System',
-    items: [{ label: 'Settings', to: '/settings', icon: Settings }],
+    label: 'REPORTS',
+    items: [
+      { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
+      { to: '/audit', icon: ClipboardList, label: 'Audit Trail' },
+    ],
+  },
+  {
+    label: 'SYSTEM',
+    items: [
+      { to: '/settings', icon: Settings, label: 'Settings' },
+    ],
   },
 ]
 
-export function Sidebar() {
-  const user = useAuthStore((s) => s.user)
+export default function Sidebar() {
+  const currentUser = useAuthStore(s => s.currentUser)
+  const documents = useDocumentStore(s => s.documents)
+  const [collapsed, setCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
 
-  return (
-    <aside className="fixed inset-y-0 left-0 z-20 flex w-64 flex-col border-r border-slate-800/40 bg-[#1E3A5F] text-slate-100">
-      <div className="flex items-center gap-3 px-5 pb-4 pt-5">
-        <div className="flex h-10 w-10 items-center justify-center rounded-full border border-yellow-500/80 bg-[#10243f] text-xs font-semibold tracking-widest text-yellow-400">
-          SEAL
-        </div>
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold tracking-tight text-white">
-            TrackGov
-          </span>
-          <span className="text-[11px] text-slate-200/80">
-            City Government of Manila
-          </span>
-        </div>
-      </div>
-      <div className="mx-5 mb-4 h-px bg-gradient-to-r from-yellow-500/60 via-yellow-400/80 to-yellow-500/60" />
+  const incomingCount = currentUser
+    ? documents.filter(d => d.currentOfficeId === currentUser.officeId && d.routingHistory.some(rh => !rh.isAcknowledged)).length
+    : 0
+  const overdueCount = documents.filter(d => d.dueDate && new Date(d.dueDate) < new Date() && !['Completed', 'Cancelled', 'Action Taken'].includes(d.status)).length
 
-      <div className="mx-4 mb-4 rounded-lg bg-slate-900/40 p-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-sm font-semibold">
-            {user?.name
-              ?.split(' ')
-              .map((n) => n[0])
-              .join('')
-              .toUpperCase() || 'TG'}
+  const badges: Record<string, number> = { incoming: incomingCount, overdue: overdueCount }
+
+  const sidebarContent = (
+    <div className="flex flex-col h-full">
+      {/* Header */}
+      <div className="p-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-full border-2 border-gold bg-navy-light flex items-center justify-center shrink-0">
+          <Shield className="w-5 h-5 text-gold" />
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-white tracking-tight">TrackGov</h1>
+            <p className="text-blue-300 text-[10px] truncate">City Government of Manila</p>
           </div>
-          <div className="flex flex-col">
-            <span className="text-xs font-semibold text-white">
-              {user?.name || 'Demo User'}
-            </span>
-            <span className="text-[11px] text-slate-300">
-              {user?.role || 'Select demo role via login'}
-            </span>
-          </div>
-        </div>
+        )}
       </div>
+      <div className="mx-4 h-px bg-gold/30" />
 
-      <nav className="flex-1 space-y-4 overflow-y-auto px-3 pb-4">
-        {groups.map((group) => (
-          <div key={group.label}>
-            <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-300/70">
-              {group.label}
-            </p>
-            <div className="mt-1 space-y-1">
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  className={({ isActive }) =>
-                    [
-                      'group flex items-center justify-between rounded-md px-3 py-2 text-xs font-medium transition-colors',
-                      isActive
-                        ? 'border-l-4 border-yellow-400 bg-blue-900/80 pl-2 text-white shadow-inner'
-                        : 'text-slate-200 hover:bg-[#2a4d7a]',
-                    ].join(' ')
-                  }
-                  end={item.to === '/'}
-                >
-                  <span className="flex items-center gap-2">
-                    <item.icon className="h-4 w-4 text-slate-200/90" />
-                    <span className="truncate">{item.label}</span>
-                  </span>
-                  {item.badge != null && (
-                    <span className="ml-2 inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                      {item.badge}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
+      {/* User card */}
+      {currentUser && !collapsed && (
+        <div className="px-4 py-3">
+          <div className="flex items-center gap-2.5 p-2 rounded-md bg-navy-light/50">
+            <Avatar className="w-8 h-8">
+              <AvatarFallback className="bg-gold text-navy text-xs font-bold">{getInitials(currentUser.firstName, currentUser.lastName)}</AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="text-white text-xs font-medium truncate">{currentUser.firstName} {currentUser.lastName}</p>
+              <p className="text-blue-300 text-[10px] truncate">{currentUser.position}</p>
             </div>
           </div>
-        ))}
-      </nav>
+        </div>
+      )}
 
-      <div className="border-t border-slate-700/60 px-4 py-3 text-[10px] text-slate-300/70">
-        <p>Transparency. Accountability. Efficiency.</p>
+      {/* Navigation */}
+      <ScrollArea className="flex-1 px-3">
+        <nav className="space-y-5 py-3">
+          {navGroups.map(group => (
+            <div key={group.label}>
+              {!collapsed && (
+                <p className="text-[10px] uppercase tracking-widest text-blue-300/60 font-semibold px-3 mb-1.5">{group.label}</p>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map(item => {
+                  const Icon = item.icon
+                  const badgeCount = item.badgeKey ? badges[item.badgeKey] : 0
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setMobileOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
+                          isActive
+                            ? 'bg-blue-900 text-white font-semibold border-l-4 border-yellow-400 -ml-px'
+                            : 'text-blue-200 hover:bg-navy-light hover:text-white'
+                        } ${collapsed ? 'justify-center px-2' : ''}`
+                      }
+                    >
+                      <Icon className="w-4 h-4 shrink-0" />
+                      {!collapsed && (
+                        <>
+                          <span className="truncate flex-1">{item.label}</span>
+                          {badgeCount > 0 && (
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.badgeKey === 'overdue' ? 'bg-red-500 text-white' : 'bg-gold text-navy'}`}>
+                              {badgeCount}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </NavLink>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </ScrollArea>
+
+      {/* Collapse toggle (desktop only) */}
+      <div className="hidden lg:block p-3 border-t border-blue-400/10">
+        <button onClick={() => setCollapsed(!collapsed)} className="w-full flex items-center justify-center gap-2 text-blue-300 hover:text-white text-xs py-1.5 rounded hover:bg-navy-light transition-colors">
+          {collapsed ? <ChevronRight className="w-4 h-4" /> : <><ChevronLeft className="w-4 h-4" /><span>Collapse</span></>}
+        </button>
       </div>
-    </aside>
+    </div>
+  )
+
+  return (
+    <>
+      {/* Mobile hamburger */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="lg:hidden fixed top-3 left-3 z-50 bg-navy text-white p-2 rounded-md shadow-lg"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+
+      {/* Mobile overlay */}
+      {mobileOpen && (
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/50" onClick={() => setMobileOpen(false)} />
+      )}
+
+      {/* Mobile sidebar */}
+      <aside className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-navy transform transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <button onClick={() => setMobileOpen(false)} className="absolute top-3 right-3 text-blue-300 hover:text-white">
+          <X className="w-5 h-5" />
+        </button>
+        {sidebarContent}
+      </aside>
+
+      {/* Desktop sidebar */}
+      <aside className={`hidden lg:flex flex-col shrink-0 bg-navy h-screen sticky top-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
+        {sidebarContent}
+      </aside>
+    </>
   )
 }
-
