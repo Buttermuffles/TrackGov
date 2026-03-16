@@ -141,3 +141,74 @@ export interface AuditEntry {
   details: string
   ipAddress: string
 }
+
+// ─── MODULE PERMISSION ACCESS (MVC) ─────────────────────────
+
+export type ModuleId =
+  | 'documents_incoming'
+  | 'documents_outgoing'
+  | 'documents_all'
+  | 'routing_forward'
+  | 'routing_map'
+  | 'offices'
+  | 'users'
+  | 'permissions'
+  | 'reports_document'
+  | 'reports_office'
+  | 'reports_compliance'
+  | 'audit_trail'
+  | 'settings_general'
+  | 'settings_tracking'
+  | 'settings_sla'
+  | 'settings_notifications'
+  | 'settings_backup'
+
+export type CRUDAction = 'create' | 'read' | 'update' | 'delete'
+
+export type ModuleGroup = 'Documents' | 'Routing' | 'Management' | 'Reports' | 'Settings'
+
+export interface CRUDActions {
+  create: boolean
+  read: boolean
+  update: boolean
+  delete: boolean
+}
+
+export interface ModulePermission {
+  id: string
+  userId: string
+  moduleId: ModuleId
+  actions: CRUDActions
+  grantedBy: string
+  grantedAt: Date
+  updatedAt: Date
+  notes?: string
+  expiresAt?: Date
+  isActive: boolean
+}
+
+export interface PermissionPreset {
+  id: string
+  name: string
+  description: string
+  permissions: Array<{
+    moduleId: ModuleId
+    actions: CRUDActions
+  }>
+  createdBy: string
+  createdAt: Date
+  isSystem: boolean
+}
+
+export type RoleDefaultPermissions = {
+  [role in UserRole]: {
+    [moduleId in ModuleId]: CRUDActions
+  }
+}
+
+export interface PermissionCheckResult {
+  allowed: boolean
+  source: 'super_admin' | 'explicit' | 'role_default' | 'denied'
+  moduleId: ModuleId
+  action: CRUDAction
+}

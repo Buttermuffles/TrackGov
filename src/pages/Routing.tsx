@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -27,8 +27,9 @@ export default function Routing() {
   const { documents, addRoutingEntry, acknowledgeDocument } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
+  const [searchParams] = useSearchParams()
 
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '')
   const [filterStatus, setFilterStatus] = useState('all')
   const [showRouteDialog, setShowRouteDialog] = useState(false)
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null)
@@ -39,6 +40,10 @@ export default function Routing() {
   const [fwdUser, setFwdUser] = useState('')
   const [fwdAction, setFwdAction] = useState<RoutingAction>('Forwarded')
   const [fwdRemarks, setFwdRemarks] = useState('')
+
+  useEffect(() => {
+    setSearch(searchParams.get('search')?.trim() ?? '')
+  }, [searchParams])
 
   const myOfficeId = user?.officeId || ''
 
@@ -210,7 +215,7 @@ export default function Routing() {
                   <p className="text-sm text-slate-500 mt-1">All documents at your office have been routed or completed.</p>
                 </div>
               ) : (
-                <ScrollArea className="max-h-[500px]">
+                <ScrollArea className="max-h-125">
                   <div className="space-y-2">
                     {myDocs.map(doc => {
                       const lastEntry = doc.routingHistory[doc.routingHistory.length - 1]
@@ -357,7 +362,7 @@ export default function Routing() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>Route To Office *</Label>
+              <Label>Route To Office <span className="text-red-500">*</span></Label>
               <Select value={fwdOffice} onValueChange={v => { setFwdOffice(v); setFwdUser('') }}>
                 <SelectTrigger><SelectValue placeholder="Select destination office..." /></SelectTrigger>
                 <SelectContent>{offices.filter(o => o.id !== myOfficeId).map(o => <SelectItem key={o.id} value={o.id}>{o.code} — {o.name}</SelectItem>)}</SelectContent>
@@ -376,7 +381,7 @@ export default function Routing() {
               </div>
             )}
             <div className="space-y-2">
-              <Label>Routing Action *</Label>
+              <Label>Routing Action <span className="text-red-500">*</span></Label>
               <Select value={fwdAction} onValueChange={v => setFwdAction(v as RoutingAction)}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -385,7 +390,7 @@ export default function Routing() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Remarks / Instructions *</Label>
+              <Label>Remarks / Instructions <span className="text-red-500">*</span></Label>
               <Textarea value={fwdRemarks} onChange={e => setFwdRemarks(e.target.value)} placeholder="Add routing instructions..." rows={3} />
             </div>
           </div>

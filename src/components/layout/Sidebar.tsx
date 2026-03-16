@@ -1,7 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
 import { useAuthStore, useDocumentStore } from '@/store'
+import { useThemeStore } from '@/store/themeStore'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -9,8 +11,9 @@ import { getInitials } from '@/lib/utils'
 import {
   LayoutDashboard, FileInput, FileOutput, Files, Clock,
   RefreshCw, Map, Building2, Users, BarChart3, ClipboardList,
-  Settings, Shield, ChevronLeft, ChevronRight, Menu, X
+  Settings, Shield, ChevronLeft, ChevronRight, Menu, X, Search
 } from 'lucide-react'
+import { differenceInDays } from 'date-fns'
 
 const navGroups = [
   {
@@ -25,7 +28,7 @@ const navGroups = [
       { to: '/incoming', icon: FileInput, label: 'Incoming Documents', badgeKey: 'incoming' as const },
       { to: '/outgoing', icon: FileOutput, label: 'Outgoing Documents' },
       { to: '/documents', icon: Files, label: 'All Documents' },
-      { to: '/pending', icon: Clock, label: 'Pending Action', badgeKey: 'overdue' as const },
+      { to: '/pending', icon: Clock, label: 'Pending Actions', badgeKey: 'pending' as const },
     ],
   },
   {
@@ -46,12 +49,13 @@ const navGroups = [
     label: 'REPORTS',
     items: [
       { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
-      { to: '/audit', icon: ClipboardList, label: 'Audit Trail' },
+      { to: '/audit', icon: ClipboardList, label: 'User Activity' },
     ],
   },
   {
     label: 'SYSTEM',
     items: [
+      { to: '/permissions', icon: Shield, label: 'Module Permissions' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
@@ -60,15 +64,50 @@ const navGroups = [
 export default function Sidebar() {
   const currentUser = useAuthStore(s => s.currentUser)
   const documents = useDocumentStore(s => s.documents)
-  const [collapsed, setCollapsed] = useState(false)
+  // collapse state now stored globally so header can control it as well
+  const collapsed = useThemeStore(s => s.sidebarCompact)
+  const setCollapsed = useThemeStore(s => s.setSidebarCompact)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [navSearch, setNavSearch] = useState('')
 
+  // counts shown in the pending page are split into needsAck, assigned, overdue
+  // use the same logic here so the sidebar badge matches the actual total pending items
   const incomingCount = currentUser
     ? documents.filter(d => d.currentOfficeId === currentUser.officeId && d.routingHistory.some(rh => !rh.isAcknowledged)).length
     : 0
   const overdueCount = documents.filter(d => d.dueDate && new Date(d.dueDate) < new Date() && !['Completed', 'Cancelled', 'Action Taken'].includes(d.status)).length
 
-  const badges: Record<string, number> = { incoming: incomingCount, overdue: overdueCount }
+  // compute pending breakdown for current user/office
+  const pendingCounts = useMemo(() => {
+    if (!currentUser) return { needsAck: 0, assigned: 0, overdue: 0 }
+    const inMyOffice = documents.filter(d => d.currentOfficeId === currentUser.officeId && !['Completed', 'Cancelled'].includes(d.status))
+    const needsAck = inMyOffice.filter(d => {
+      const lr = d.routingHistory[d.routingHistory.length - 1]
+      return lr && lr.toOfficeId === currentUser.officeId && !lr.isAcknowledged
+    }).length
+    const assigned = inMyOffice.filter(d => d.currentAssigneeId === currentUser.id).length
+    const overdue = inMyOffice.filter(d => d.dueDate && differenceInDays(new Date(d.dueDate), new Date()) < 0).length
+    return { needsAck, assigned, overdue }
+  // dependencies include documents and currentUser so it re-calculates automatically
+  }, [documents, currentUser])
+
+  const badges: Record<string, number> = {
+    incoming: incomingCount,
+    overdue: overdueCount,
+    // we'll use `pending` key for the badge on the pending menu item
+    pending: pendingCounts.needsAck + pendingCounts.assigned + pendingCounts.overdue,
+  }
+
+  const filteredNavGroups = useMemo(() => {
+    const query = navSearch.trim().toLowerCase()
+    if (!query) return navGroups
+    return navGroups
+      .map(group => ({
+        ...group,
+        items: group.items.filter(item => item.label.toLowerCase().includes(query)),
+      }))
+      .filter(group => group.items.length > 0)
+  }, [navSearch])
 
   const sidebarContent = (
     <div className="flex flex-col h-full">
@@ -80,34 +119,19 @@ export default function Sidebar() {
         {!collapsed && (
           <div className="min-w-0">
             <h1 className="text-lg font-bold text-white tracking-tight">TrackGov</h1>
-            <p className="text-blue-300 text-[10px] truncate">City Government of Manila</p>
           </div>
         )}
       </div>
       <div className="mx-4 h-px bg-gold/30" />
 
-      {/* User card */}
-      {currentUser && !collapsed && (
-        <div className="px-4 py-3">
-          <div className="flex items-center gap-2.5 p-2 rounded-md bg-navy-light/50">
-            <Avatar className="w-8 h-8">
-              <AvatarFallback className="bg-gold text-navy text-xs font-bold">{getInitials(currentUser.firstName, currentUser.lastName)}</AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <p className="text-white text-xs font-medium truncate">{currentUser.firstName} {currentUser.lastName}</p>
-              <p className="text-blue-300 text-[10px] truncate">{currentUser.position}</p>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Navigation */}
-      <ScrollArea className="flex-1 px-3">
+      <ScrollArea className="flex-1 px-3 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-blue-500/20 hover:scrollbar-thumb-blue-500/40">
         <nav className="space-y-5 py-3">
-          {navGroups.map(group => (
+          {filteredNavGroups.map(group => (
             <div key={group.label}>
               {!collapsed && (
-                <p className="text-[10px] uppercase tracking-widest text-blue-300/60 font-semibold px-3 mb-1.5">{group.label}</p>
+                <p className="text-[10px] uppercase tracking-widest text-white font-semibold px-3 mb-1.5">{group.label}</p>
               )}
               <div className="space-y-0.5">
                 {group.items.map(item => {
@@ -122,7 +146,7 @@ export default function Sidebar() {
                         `flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors ${
                           isActive
                             ? 'bg-blue-900 text-white font-semibold border-l-4 border-yellow-400 -ml-px'
-                            : 'text-blue-200 hover:bg-navy-light hover:text-white'
+                            : 'text-white hover:bg-navy-light hover:text-blue-300'
                         } ${collapsed ? 'justify-center px-2' : ''}`
                       }
                     >
@@ -131,7 +155,11 @@ export default function Sidebar() {
                         <>
                           <span className="truncate flex-1">{item.label}</span>
                           {badgeCount > 0 && (
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${item.badgeKey === 'overdue' ? 'bg-red-500 text-white' : 'bg-gold text-navy'}`}>
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                              item.badgeKey === 'pending' ? 'bg-blue-600 text-white' :
+                              item.badgeKey === 'incoming' ? 'bg-gold text-navy' :
+                              'bg-gold text-navy'
+                            }`}>
                               {badgeCount}
                             </span>
                           )}
@@ -146,12 +174,6 @@ export default function Sidebar() {
         </nav>
       </ScrollArea>
 
-      {/* Collapse toggle (desktop only) */}
-      <div className="hidden lg:block p-3 border-t border-blue-400/10">
-        <button onClick={() => setCollapsed(!collapsed)} className="w-full flex items-center justify-center gap-2 text-blue-300 hover:text-white text-xs py-1.5 rounded hover:bg-navy-light transition-colors">
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <><ChevronLeft className="w-4 h-4" /><span>Collapse</span></>}
-        </button>
-      </div>
     </div>
   )
 
@@ -161,6 +183,7 @@ export default function Sidebar() {
       <button
         onClick={() => setMobileOpen(true)}
         className="lg:hidden fixed top-3 left-3 z-50 bg-navy text-white p-2 rounded-md shadow-lg"
+        aria-label="Open navigation menu"
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -171,15 +194,15 @@ export default function Sidebar() {
       )}
 
       {/* Mobile sidebar */}
-      <aside className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-navy transform transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <button onClick={() => setMobileOpen(false)} className="absolute top-3 right-3 text-blue-300 hover:text-white">
+      <aside className={`lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-navy transform transition-transform duration-200 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'} overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-blue-500/20 hover:scrollbar-thumb-blue-500/40 no-scrollbar`}>
+        <button onClick={() => setMobileOpen(false)} className="absolute top-3 right-3 text-blue-300 hover:text-white" aria-label="Close navigation menu">
           <X className="w-5 h-5" />
         </button>
         {sidebarContent}
       </aside>
 
       {/* Desktop sidebar */}
-      <aside className={`hidden lg:flex flex-col shrink-0 bg-navy h-screen sticky top-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'}`}>
+      <aside className={`hidden lg:flex flex-col shrink-0 bg-navy h-screen sticky top-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'} overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-blue-500/20 hover:scrollbar-thumb-blue-500/40 no-scrollbar`}>
         {sidebarContent}
       </aside>
     </>

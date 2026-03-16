@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
-import { useDocumentStore, useOfficeStore } from '@/store'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
+import { useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,9 @@ import { Search, ChevronLeft, ChevronRight, FileText, ExternalLink, LayoutGrid, 
 export default function Documents() {
   const documents = useDocumentStore(s => s.documents)
   const offices = useOfficeStore(s => s.offices)
-  const [search, setSearch] = useState('')
+  const users = useUserStore(s => s.users)
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '')
   const [statusFilter, setStatusFilter] = useState('all')
   const [typeFilter, setTypeFilter] = useState('all')
   const [priorityFilter, setPriorityFilter] = useState('all')
@@ -24,6 +26,11 @@ export default function Documents() {
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const perPage = 20
+
+  useEffect(() => {
+    setSearch(searchParams.get('search')?.trim() ?? '')
+    setPage(1)
+  }, [searchParams])
 
   const filtered = useMemo(() => {
     let r = [...documents]
@@ -39,6 +46,11 @@ export default function Documents() {
   const totalPages = Math.ceil(filtered.length / perPage)
   const paged = filtered.slice((page - 1) * perPage, page * perPage)
   const getOfficeName = (oid: string) => offices.find(o => o.id === oid)?.code || oid
+  const getOriginatorName = (originatorId: string, originOfficeId: string) => {
+    const originator = users.find(u => u.id === originatorId)
+    if (originator) return `${originator.firstName} ${originator.lastName}`
+    return getOfficeName(originOfficeId)
+  }
   const activeCount = [statusFilter, typeFilter, priorityFilter, officeFilter].filter(v => v !== 'all').length
   const statuses: DocumentStatus[] = ['Received','In Review','For Signature','For Routing','In Transit','Action Taken','Returned','Completed','On Hold','Cancelled']
   const docTypes: DocumentType[] = ['Letter','Memorandum','Resolution','Ordinance','Contract','Report','Request','Petition','Certificate','Voucher','Purchase Order','Other']
@@ -53,7 +65,7 @@ export default function Documents() {
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><Input value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} placeholder="Search..." className="pl-9" /></div>
         <Button variant={showFilters ? 'default' : 'outline'} size="sm" onClick={() => setShowFilters(!showFilters)}><Filter className="w-4 h-4 mr-1" />Filters{activeCount > 0 && <Badge className="ml-1 text-[10px]" variant="secondary">{activeCount}</Badge>}</Button>
-        <div className="flex border rounded-md overflow-hidden"><button onClick={() => setView('table')} className={"p-2 " + (view === 'table' ? 'bg-blue-50 text-blue-700' : 'text-slate-400')}><LayoutList className="w-4 h-4" /></button><button onClick={() => setView('card')} className={"p-2 " + (view === 'card' ? 'bg-blue-50 text-blue-700' : 'text-slate-400')}><LayoutGrid className="w-4 h-4" /></button></div>
+        <div className="flex border rounded-md overflow-hidden"><button onClick={() => setView('table')} aria-label="Table view" title="Table view" className={"p-2 " + (view === 'table' ? 'bg-blue-50 text-blue-700' : 'text-slate-400')}><LayoutList className="w-4 h-4" /></button><button onClick={() => setView('card')} aria-label="Card view" title="Card view" className={"p-2 " + (view === 'card' ? 'bg-blue-50 text-blue-700' : 'text-slate-400')}><LayoutGrid className="w-4 h-4" /></button></div>
         <Select value={sortBy} onValueChange={v => { setSortBy(v); setPage(1) }}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="newest">Newest</SelectItem><SelectItem value="oldest">Oldest</SelectItem><SelectItem value="title">Title</SelectItem></SelectContent></Select>
       </div>
       {showFilters && <Card><CardContent className="p-3"><div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -64,8 +76,8 @@ export default function Documents() {
       </div>{activeCount > 0 && <Button variant="ghost" size="sm" className="mt-2 text-xs" onClick={() => { setStatusFilter('all'); setTypeFilter('all'); setPriorityFilter('all'); setOfficeFilter('all'); setPage(1) }}><X className="w-3 h-3 mr-1" />Clear</Button>}</CardContent></Card>}
 
       {view === 'table' && <Card><CardContent className="p-0">
-        <div className="hidden md:block overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-slate-50 text-left"><th className="px-4 py-3 text-xs font-semibold text-slate-500">Tracking</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Title</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Type</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Status</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Priority</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Office</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Date</th><th className="px-4 py-3"></th></tr></thead><tbody>
-          {paged.map(doc => <tr key={doc.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</td><td className="px-4 py-3 max-w-[260px]"><span className="line-clamp-1 font-medium">{doc.title}</span></td><td className="px-4 py-3"><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></td><td className="px-4 py-3"><DocStatusBadge status={doc.status} /></td><td className="px-4 py-3"><PriorityBadge priority={doc.priority} /></td><td className="px-4 py-3 text-xs">{getOfficeName(doc.currentOfficeId)}</td><td className="px-4 py-3 text-xs text-slate-500">{format(new Date(doc.dateCreated), 'MMM d, yyyy')}</td><td className="px-4 py-3"><Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link to={'/documents/' + doc.id}><ExternalLink className="w-3.5 h-3.5" /></Link></Button></td></tr>)}
+        <div className="hidden md:block overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-slate-50 text-left"><th className="px-4 py-3 text-xs font-semibold text-slate-500">Tracking</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Title</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Type</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Status</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Originator</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Office</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Date</th><th className="px-4 py-3"></th></tr></thead><tbody>
+          {paged.map(doc => <tr key={doc.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</td><td className="px-4 py-3 max-w-[260px]"><span className="line-clamp-1 font-medium">{doc.title}</span></td><td className="px-4 py-3"><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></td><td className="px-4 py-3"><DocStatusBadge status={doc.status} /></td><td className="px-4 py-3 text-xs">{getOriginatorName(doc.originatorId, doc.originOfficeId)}</td><td className="px-4 py-3 text-xs">{getOfficeName(doc.currentOfficeId)}</td><td className="px-4 py-3 text-xs text-slate-500">{format(new Date(doc.dateCreated), 'MMM d, yyyy')}</td><td className="px-4 py-3"><Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link to={'/documents/' + doc.id}><ExternalLink className="w-3.5 h-3.5" /></Link></Button></td></tr>)}
         </tbody></table></div>
         <div className="md:hidden divide-y">{paged.map(doc => <Link key={doc.id} to={'/documents/' + doc.id} className="block p-3 hover:bg-slate-50"><div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><p className="font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</p><p className="text-sm font-medium truncate mt-0.5">{doc.title}</p></div><div className="flex flex-col items-end gap-1"><DocStatusBadge status={doc.status} /><PriorityBadge priority={doc.priority} /></div></div></Link>)}</div>
         {paged.length === 0 && <div className="text-center py-12"><FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" /><p className="text-sm text-slate-400">No documents</p></div>}

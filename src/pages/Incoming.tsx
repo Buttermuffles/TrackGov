@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,23 +11,42 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
-import { Plus, Search, Check, ArrowRight, MessageSquare, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Plus, Search, Check, ArrowRight, MessageSquare, FileText, ChevronLeft, ChevronRight, Eye } from 'lucide-react'
 import { format, differenceInDays } from 'date-fns'
-import type { Document, DocumentType, Priority, Classification, RoutingAction } from '@/types'
-import { generateTrackingCode } from '@/lib/utils'
+import { recognize } from 'tesseract.js'
+import type { Document, DocumentType, Classification } from '@/types'
+import { formatFileSize } from '@/lib/utils'
+
+type PendingAttachment = {
+  id: string
+  file: File
+  previewUrl: string
+  ocrStatus: 'idle' | 'processing' | 'done' | 'error'
+  ocrText: string
+  ocrError?: string
+}
 
 export default function Incoming() {
   const user = useAuthStore(s => s.currentUser)
   const { documents, addDocument, acknowledgeDocument, addRoutingEntry } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
-  const [search, setSearch] = useState('')
+  const [searchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '')
   const [typeFilter, setTypeFilter] = useState<string>('all')
-  const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [showReceiveForm, setShowReceiveForm] = useState(false)
   const [page, setPage] = useState(1)
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [previewAttachment, setPreviewAttachment] = useState<PendingAttachment | null>(null)
   const perPage = 10
+
+  useEffect(() => {
+    setSearch(searchParams.get('search')?.trim() ?? '')
+    if (searchParams.get('create') === '1') {
+      setShowReceiveForm(true)
+    }
+    setPage(1)
+  }, [searchParams])
 
   const incomingDocs = useMemo(() => {
     let docs = documents.filter(d => d.currentOfficeId === user?.officeId)
@@ -36,33 +55,143 @@ export default function Incoming() {
       docs = docs.filter(d => d.trackingCode.toLowerCase().includes(s) || d.title.toLowerCase().includes(s))
     }
     if (typeFilter !== 'all') docs = docs.filter(d => d.documentType === typeFilter)
-    if (priorityFilter !== 'all') docs = docs.filter(d => d.priority === priorityFilter)
     return docs.sort((a, b) => new Date(b.dateReceived).getTime() - new Date(a.dateReceived).getTime())
-  }, [documents, user, search, typeFilter, priorityFilter])
+  }, [documents, user, search, typeFilter])
 
   const totalPages = Math.ceil(incomingDocs.length / perPage)
   const paginatedDocs = incomingDocs.slice((page - 1) * perPage, page * perPage)
   const getOfficeName = (id: string) => offices.find(o => o.id === id)?.code || id
   const getUserName = (id: string) => { const u = users.find(u => u.id === id); return u ? `${u.firstName} ${u.lastName}` : '—' }
-
-  const isOverdue = (d: Document) => d.dueDate && new Date(d.dueDate) < new Date() && !['Completed', 'Cancelled', 'Action Taken'].includes(d.status)
+  const getOriginDisplay = (d: Document) => {
+    if (user?.role === 'Super Admin') return getUserName(d.originatorId)
+    return getOfficeName(d.originOfficeId)
+  }
   const isUnacknowledged = (d: Document) => d.routingHistory.some(rh => rh.toOfficeId === user?.officeId && !rh.isAcknowledged)
 
   // Receive form state
   const [formData, setFormData] = useState({
-    title: '', documentType: 'Letter' as DocumentType, referenceNumber: '', classification: 'Routine' as Classification, priority: 'Normal' as Priority,
-    fromOfficeId: '', dateReceived: format(new Date(), 'yyyy-MM-dd'), dueDate: '', description: '', tags: '',
-    assignToOfficeId: '', assignToUserId: '', action: 'For Review' as RoutingAction, remarks: '',
+    title: '', documentType: 'Letter' as DocumentType, referenceNumber: '', classification: 'Routine' as Classification,
+    fromOfficeId: '', dateReceived: format(new Date(), 'yyyy-MM-dd'), description: '', tags: '',
+    assignToOfficeId: '', assignToUserId: '', remarks: '',
   })
+
+  useEffect(() => {
+    return () => {
+      attachments.forEach(att => URL.revokeObjectURL(att.previewUrl))
+    }
+  }, [attachments])
+
+  const resetReceiveForm = () => {
+    attachments.forEach(att => URL.revokeObjectURL(att.previewUrl))
+    setAttachments([])
+    setFormData({
+      title: '',
+      documentType: 'Letter',
+      referenceNumber: '',
+      classification: 'Routine',
+      fromOfficeId: '',
+      dateReceived: format(new Date(), 'yyyy-MM-dd'),
+      description: '',
+      tags: '',
+      assignToOfficeId: '',
+      assignToUserId: '',
+      remarks: '',
+    })
+  }
+
+  const onSelectAttachments = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files ?? [])
+    if (!selected.length) return
+
+    setAttachments(prev => {
+      const existingKeys = new Set(prev.map(att => `${att.file.name}-${att.file.size}-${att.file.lastModified}`))
+      const next = [...prev]
+
+      selected.forEach(file => {
+        const key = `${file.name}-${file.size}-${file.lastModified}`
+        if (existingKeys.has(key)) return
+        next.push({
+          id: `pending-att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          file,
+          previewUrl: URL.createObjectURL(file),
+          ocrStatus: 'idle',
+          ocrText: '',
+        })
+      })
+
+      return next
+    })
+
+    e.target.value = ''
+  }
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => {
+      const target = prev.find(att => att.id === id)
+      if (target) URL.revokeObjectURL(target.previewUrl)
+      if (previewAttachment?.id === id) setPreviewAttachment(null)
+      return prev.filter(att => att.id !== id)
+    })
+  }
+
+  const canPreviewAttachment = (att: PendingAttachment) => {
+    return att.file.type.startsWith('image/') || att.file.type === 'application/pdf' || att.file.type.startsWith('text/')
+  }
+
+  const runOcr = async (id: string) => {
+    const target = attachments.find(att => att.id === id)
+    if (!target || !target.file.type.startsWith('image/')) return
+
+    setAttachments(prev => prev.map(att =>
+      att.id === id ? { ...att, ocrStatus: 'processing', ocrError: undefined } : att
+    ))
+
+    try {
+      const { data } = await recognize(target.file, 'eng')
+      const text = (data.text ?? '').trim()
+      setAttachments(prev => prev.map(att =>
+        att.id === id ? { ...att, ocrStatus: 'done', ocrText: text } : att
+      ))
+    } catch {
+      setAttachments(prev => prev.map(att =>
+        att.id === id ? { ...att, ocrStatus: 'error', ocrError: 'OCR failed. Please try again.' } : att
+      ))
+    }
+  }
+
+  const runOcrForAllImages = async () => {
+    const imageAttachments = attachments.filter(att => att.file.type.startsWith('image/'))
+    for (const att of imageAttachments) {
+      if (att.ocrStatus === 'done') continue
+      await runOcr(att.id)
+    }
+  }
 
   const handleReceive = () => {
     if (!formData.title || !user) return
+    const ocrSummary = attachments
+      .filter(att => att.ocrText.trim())
+      .map(att => `[${att.file.name}]\n${att.ocrText.trim()}`)
+      .join('\n\n')
+
     const newDoc = addDocument({
-      title: formData.title, description: formData.description, documentType: formData.documentType, classification: formData.classification, priority: formData.priority,
+      title: formData.title,
+      description: formData.description || ocrSummary,
+      documentType: formData.documentType,
+      classification: formData.classification,
+      priority: 'Normal',
       originatorId: user.id, originOfficeId: user.officeId, currentOfficeId: formData.assignToOfficeId || user.officeId,
       currentAssigneeId: formData.assignToUserId || undefined, status: 'Received',
-      attachments: [], routingHistory: [], remarks: [],
-      dueDate: formData.dueDate ? new Date(formData.dueDate) : undefined,
+      attachments: attachments.map((att, idx) => ({
+        id: `att-${Date.now()}-${idx}`,
+        filename: att.file.name,
+        fileSize: att.file.size,
+        fileType: att.file.type || 'application/octet-stream',
+        url: att.previewUrl,
+        uploadedBy: user.id,
+        uploadedAt: new Date(),
+      })),
+      routingHistory: [], remarks: [],
       dateReceived: new Date(formData.dateReceived), tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
       referenceNumber: formData.referenceNumber || undefined, isConfidential: formData.classification === 'Confidential' || formData.classification === 'Top Secret',
     })
@@ -71,12 +200,12 @@ export default function Incoming() {
       addRoutingEntry(newDoc.id, {
         documentId: newDoc.id, fromOfficeId: user.officeId, toOfficeId: formData.assignToOfficeId,
         fromUserId: user.id, toUserId: formData.assignToUserId || undefined,
-        action: formData.action, remarks: formData.remarks, timestamp: new Date(), isAcknowledged: false,
+        action: 'For Review', remarks: formData.remarks, timestamp: new Date(), isAcknowledged: false,
       })
     }
 
     setShowReceiveForm(false)
-    setFormData({ title: '', documentType: 'Letter', referenceNumber: '', classification: 'Routine', priority: 'Normal', fromOfficeId: '', dateReceived: format(new Date(), 'yyyy-MM-dd'), dueDate: '', description: '', tags: '', assignToOfficeId: '', assignToUserId: '', action: 'For Review', remarks: '' })
+    resetReceiveForm()
   }
 
   return (
@@ -104,15 +233,6 @@ export default function Incoming() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-          <SelectTrigger className="w-full sm:w-36"><SelectValue placeholder="All Priorities" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Priorities</SelectItem>
-            {['Low', 'Normal', 'High', 'Urgent'].map(p => (
-              <SelectItem key={p} value={p}>{p}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
       </div>
 
       {/* Table */}
@@ -127,36 +247,33 @@ export default function Incoming() {
                   <TableHead className="hidden lg:table-cell">Type</TableHead>
                   <TableHead className="hidden sm:table-cell">From</TableHead>
                   <TableHead className="hidden xl:table-cell">Date Received</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="hidden xl:table-cell">Due Date</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>Origin</TableHead>
+                  <TableHead className="hidden lg:table-cell">Routing History</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedDocs.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-12">
+                    <TableCell colSpan={7} className="text-center py-12">
                       <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                       <p className="text-sm text-slate-400">No incoming documents found</p>
                     </TableCell>
                   </TableRow>
                 ) : (
                   paginatedDocs.map(doc => (
-                    <TableRow key={doc.id} className={`${isOverdue(doc) ? 'bg-red-50 border-l-4 border-red-500' : ''} ${isUnacknowledged(doc) ? 'bg-blue-50 font-medium' : ''}`}>
+                    <TableRow key={doc.id} className={`${isUnacknowledged(doc) ? 'bg-blue-50 font-medium' : ''}`}>
                       <TableCell>
                         <Link to={`/documents/${doc.id}`} className="font-mono text-xs text-blue-700 hover:underline font-bold">{doc.trackingCode}</Link>
-                        <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-[150px]">{doc.title}</p>
+                        <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell max-w-[200px]"><p className="truncate text-sm">{doc.title}</p></TableCell>
+                      <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
                       <TableCell className="hidden lg:table-cell"><Badge variant="secondary" className="text-[10px]">{doc.documentType}</Badge></TableCell>
                       <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
                       <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
-                      <TableCell><PriorityBadge priority={doc.priority} /></TableCell>
-                      <TableCell><DocStatusBadge status={doc.status} /></TableCell>
-                      <TableCell className="hidden xl:table-cell text-xs">{doc.dueDate ? format(new Date(doc.dueDate), 'MMM d, yyyy') : '—'}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
+                      <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-[10px]">{doc.routingHistory.length} steps</Badge>
                           <Link to={`/documents/${doc.id}`}><Button variant="ghost" size="sm" className="h-7 text-xs">View</Button></Link>
                           {isUnacknowledged(doc) && (
                             <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
@@ -195,11 +312,11 @@ export default function Incoming() {
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2 space-y-2">
-                <Label>Document Title *</Label>
+                <Label>Document Title <span className="text-red-500">*</span></Label>
                 <Input value={formData.title} onChange={e => setFormData(f => ({ ...f, title: e.target.value }))} placeholder="Enter document title" />
               </div>
               <div className="space-y-2">
-                <Label>Document Type *</Label>
+                <Label>Document Type <span className="text-red-500">*</span></Label>
                 <Select value={formData.documentType} onValueChange={v => setFormData(f => ({ ...f, documentType: v as DocumentType }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -214,7 +331,7 @@ export default function Incoming() {
                 <Input value={formData.referenceNumber} onChange={e => setFormData(f => ({ ...f, referenceNumber: e.target.value }))} placeholder="e.g. LGU-2026-089" />
               </div>
               <div className="space-y-2">
-                <Label>Classification *</Label>
+                <Label>Classification <span className="text-red-500">*</span></Label>
                 <Select value={formData.classification} onValueChange={v => setFormData(f => ({ ...f, classification: v as Classification }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -223,21 +340,8 @@ export default function Incoming() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Priority Level *</Label>
-                <Select value={formData.priority} onValueChange={v => setFormData(f => ({ ...f, priority: v as Priority }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {['Low', 'Normal', 'High', 'Urgent'].map(p => (<SelectItem key={p} value={p}>{p}</SelectItem>))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Date Received *</Label>
+                <Label>Date Received <span className="text-red-500">*</span></Label>
                 <Input type="date" value={formData.dateReceived} onChange={e => setFormData(f => ({ ...f, dateReceived: e.target.value }))} />
-              </div>
-              <div className="space-y-2">
-                <Label>Due Date</Label>
-                <Input type="date" value={formData.dueDate} onChange={e => setFormData(f => ({ ...f, dueDate: e.target.value }))} />
               </div>
               <div className="sm:col-span-2 space-y-2">
                 <Label>Description</Label>
@@ -246,6 +350,68 @@ export default function Incoming() {
               <div className="sm:col-span-2 space-y-2">
                 <Label>Tags (comma separated)</Label>
                 <Input value={formData.tags} onChange={e => setFormData(f => ({ ...f, tags: e.target.value }))} placeholder="e.g. budget, urgent, fy2026" />
+              </div>
+
+              <div className="sm:col-span-2 space-y-3 border rounded-lg p-3 bg-slate-50/80">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Attachments (multiple files)</Label>
+                  <Button type="button" size="sm" variant="accent" onClick={runOcrForAllImages} disabled={!attachments.some(att => att.file.type.startsWith('image/'))}>
+                    Scan OCR for Images
+                  </Button>
+                </div>
+                <Input
+                  type="file"
+                  multiple
+                  onChange={onSelectAttachments}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
+                />
+                <p className="text-[11px] text-slate-500">Supports image, PDF, Word, spreadsheet, and text files. OCR scanning is currently available for images.</p>
+
+                {attachments.length > 0 && (
+                  <div className="space-y-2">
+                    {attachments.map(att => (
+                      <div key={att.id} className="rounded-md border bg-white p-2.5 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium truncate">{att.file.name}</p>
+                            <p className="text-[11px] text-slate-500">{formatFileSize(att.file.size)} · {att.file.type || 'Unknown type'}</p>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="accent"
+                              className="h-7 text-[11px]"
+                              onClick={() => setPreviewAttachment(att)}
+                              disabled={!canPreviewAttachment(att)}
+                            >
+                              <Eye className="w-3 h-3 mr-1" />Preview
+                            </Button>
+                            {att.file.type.startsWith('image/') && (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant={att.ocrStatus === 'done' ? 'success' : 'gold'}
+                                className="h-7 text-[11px]"
+                                onClick={() => runOcr(att.id)}
+                                disabled={att.ocrStatus === 'processing'}
+                              >
+                                {att.ocrStatus === 'processing' ? 'Scanning...' : att.ocrStatus === 'done' ? 'OCR Done' : 'Run OCR'}
+                              </Button>
+                            )}
+                            <Button type="button" size="sm" variant="destructive" className="h-7 text-[11px]" onClick={() => removeAttachment(att.id)}>Remove</Button>
+                          </div>
+                        </div>
+
+                        {att.ocrStatus === 'done' && att.ocrText && (
+                          <Textarea readOnly value={att.ocrText.slice(0, 1000)} rows={4} className="text-xs" />
+                        )}
+                        {att.ocrStatus === 'done' && !att.ocrText && <p className="text-[11px] text-amber-600">No readable text found from OCR.</p>}
+                        {att.ocrStatus === 'error' && <p className="text-[11px] text-red-600">{att.ocrError}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
             <div className="border-t pt-4 mt-2">
@@ -274,15 +440,6 @@ export default function Incoming() {
                     </Select>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <Label>Action Required</Label>
-                  <Select value={formData.action} onValueChange={v => setFormData(f => ({ ...f, action: v as RoutingAction }))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {['For Review', 'For Signature', 'For Action', 'For Information'].map(a => (<SelectItem key={a} value={a}>{a}</SelectItem>))}
-                    </SelectContent>
-                  </Select>
-                </div>
                 <div className="sm:col-span-2 space-y-2">
                   <Label>Remarks / Instructions</Label>
                   <Textarea value={formData.remarks} onChange={e => setFormData(f => ({ ...f, remarks: e.target.value }))} placeholder="Instructions for receiving office..." rows={2} />
@@ -291,8 +448,48 @@ export default function Incoming() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowReceiveForm(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { setShowReceiveForm(false); resetReceiveForm() }}>Cancel</Button>
             <Button onClick={handleReceive} disabled={!formData.title}><Check className="w-4 h-4 mr-2" />Receive & Route</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!previewAttachment} onOpenChange={open => { if (!open) setPreviewAttachment(null) }}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Attachment Preview</DialogTitle>
+            <DialogDescription>{previewAttachment?.file.name}</DialogDescription>
+          </DialogHeader>
+
+          {previewAttachment && (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-500">{formatFileSize(previewAttachment.file.size)} · {previewAttachment.file.type || 'Unknown type'}</p>
+              {previewAttachment.file.type.startsWith('image/') && (
+                <div className="rounded-lg border bg-slate-50 p-2">
+                  <img src={previewAttachment.previewUrl} alt={previewAttachment.file.name} className="max-h-[60vh] w-full object-contain rounded" />
+                </div>
+              )}
+              {previewAttachment.file.type === 'application/pdf' && (
+                <iframe src={previewAttachment.previewUrl} title={previewAttachment.file.name} className="h-[60vh] w-full rounded border" />
+              )}
+              {previewAttachment.file.type.startsWith('text/') && (
+                <iframe src={previewAttachment.previewUrl} title={previewAttachment.file.name} className="h-[50vh] w-full rounded border bg-white" />
+              )}
+              {!canPreviewAttachment(previewAttachment) && (
+                <div className="rounded-lg border bg-slate-50 p-4 text-sm text-slate-600">
+                  Preview is not available for this file type. You can still keep it attached.
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {previewAttachment && (
+              <Button asChild variant="outline">
+                <a href={previewAttachment.previewUrl} target="_blank" rel="noreferrer">Open in New Tab</a>
+              </Button>
+            )}
+            <Button onClick={() => setPreviewAttachment(null)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

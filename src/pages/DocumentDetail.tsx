@@ -59,6 +59,58 @@ export default function DocumentDetail() {
   const getUserName = (uid: string) => { const u = users.find(u => u.id === uid); return u ? `${u.firstName} ${u.lastName}` : uid }
   const daysLeft = doc.dueDate ? differenceInDays(new Date(doc.dueDate), new Date()) : null
 
+  const getRoutingActionMeta = (action: RoutingAction) => {
+    switch (action) {
+      case 'Forwarded':
+      case 'Endorsed':
+        return {
+          icon: Send,
+          iconWrapClass: 'bg-blue-100 text-blue-700',
+          badgeClass: 'bg-blue-50 text-blue-700 border-blue-200',
+        }
+      case 'For Review':
+      case 'For Information':
+      case 'Noted':
+      case 'Filed':
+        return {
+          icon: Eye,
+          iconWrapClass: 'bg-slate-100 text-slate-700',
+          badgeClass: 'bg-slate-50 text-slate-700 border-slate-200',
+        }
+      case 'For Signature':
+      case 'For Action':
+        return {
+          icon: Clock,
+          iconWrapClass: 'bg-amber-100 text-amber-700',
+          badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+        }
+      case 'Approved':
+        return {
+          icon: CheckCircle,
+          iconWrapClass: 'bg-emerald-100 text-emerald-700',
+          badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        }
+      case 'Returned':
+        return {
+          icon: RotateCcw,
+          iconWrapClass: 'bg-rose-100 text-rose-700',
+          badgeClass: 'bg-rose-50 text-rose-700 border-rose-200',
+        }
+      case 'Disapproved':
+        return {
+          icon: Pause,
+          iconWrapClass: 'bg-red-100 text-red-700',
+          badgeClass: 'bg-red-50 text-red-700 border-red-200',
+        }
+      default:
+        return {
+          icon: FileText,
+          iconWrapClass: 'bg-slate-100 text-slate-700',
+          badgeClass: 'bg-slate-50 text-slate-700 border-slate-200',
+        }
+    }
+  }
+
   const handleForward = () => {
     if (!fwdOffice || !user) return
     addRoutingEntry(doc.id, {
@@ -139,48 +191,90 @@ export default function DocumentDetail() {
         {/* Left: Routing Timeline */}
         <div className="lg:col-span-3 space-y-4">
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-semibold">Routing Timeline</CardTitle>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between gap-3">
+                <CardTitle className="text-sm font-semibold">Routing Timeline</CardTitle>
+                <Badge variant="secondary" className="text-[10px] px-2 py-0.5">
+                  {doc.routingHistory.length} {doc.routingHistory.length === 1 ? 'step' : 'steps'}
+                </Badge>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-0">
-                {doc.routingHistory.map((entry, i) => {
-                  const isLast = i === doc.routingHistory.length - 1
-                  const isCurrent = isLast && !['Completed', 'Cancelled'].includes(doc.status)
-                  return (
-                    <div key={entry.id} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <div className={`w-3 h-3 rounded-full shrink-0 mt-1.5 ${isCurrent ? 'bg-blue-600 ring-4 ring-blue-100 animate-pulse' : 'bg-navy'}`} />
-                        {!isLast && <div className="w-px flex-1 bg-slate-200 my-1" />}
+                {!['Completed', 'Cancelled'].includes(doc.status) && (
+                  <div className="flex gap-4 pb-5">
+                    <div className="flex flex-col items-center">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-slate-300 bg-white text-slate-400 mt-0.5">
+                        <Clock className="w-4 h-4" />
                       </div>
-                      <div className={`pb-6 min-w-0 flex-1 ${isCurrent ? 'bg-blue-50 -m-3 p-3 rounded-lg border border-blue-100' : ''}`}>
-                        <p className="text-xs text-slate-400">{format(new Date(entry.timestamp), 'MMM d, yyyy — h:mm a')}</p>
-                        <p className="text-sm font-semibold text-slate-900 mt-0.5">
-                          {entry.action === 'Forwarded' ? '➡️' : entry.action === 'For Signature' ? '✍️' : entry.action === 'Approved' ? '✅' : entry.action === 'Returned' ? '↩️' : '📋'}{' '}
-                          {entry.action}
-                        </p>
-                        <p className="text-xs text-slate-600 mt-1">
-                          By: {getUserName(entry.fromUserId)} ({getOfficeCode(entry.fromOfficeId)}) → {getOfficeCode(entry.toOfficeId)}
-                          {entry.toUserId && ` (${getUserName(entry.toUserId)})`}
-                        </p>
-                        {entry.remarks && <p className="text-sm text-slate-700 mt-2 italic">"{entry.remarks}"</p>}
-                        {entry.isAcknowledged && entry.receivedAt && (
-                          <p className="text-[10px] text-green-600 mt-1">✓ Acknowledged at {format(new Date(entry.receivedAt), 'h:mm a')}</p>
+                    </div>
+                    <div className="flex-1 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-400">
+                      Awaiting next action...
+                    </div>
+                  </div>
+                )}
+
+                {[...doc.routingHistory]
+                  .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                  .map((entry, i, arr) => {
+                  const isLast = i === arr.length - 1
+                  const isCurrent = i === 0 && !['Completed', 'Cancelled'].includes(doc.status)
+                  const actionMeta = getRoutingActionMeta(entry.action)
+                  const ActionIcon = actionMeta.icon
+                  return (
+                    <div key={entry.id} className="flex gap-4 pb-5 last:pb-0">
+                      <div className="flex flex-col items-center">
+                        <div className={`flex h-9 w-9 items-center justify-center rounded-full border shrink-0 mt-0.5 ${isCurrent ? 'border-blue-200 bg-blue-100 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-500'}`}>
+                          <ActionIcon className="w-4 h-4" />
+                        </div>
+                        {!isLast && <div className={`w-px flex-1 my-1.5 ${isCurrent ? 'bg-blue-200' : 'bg-slate-200'}`} />}
+                      </div>
+                      <div className={`min-w-0 flex-1 rounded-xl border p-4 shadow-sm transition-colors ${isCurrent ? 'border-blue-200 bg-blue-50/80' : 'border-slate-200 bg-white'}`}>
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${actionMeta.badgeClass}`}>
+                                <ActionIcon className="w-3 h-3" />
+                                {entry.action}
+                              </span>
+                              {isCurrent && <Badge variant="secondary" className="text-[10px] px-2 py-0.5">Current Step</Badge>}
+                            </div>
+                            <p className="mt-2 text-sm font-semibold text-slate-900">
+                              {getOfficeCode(entry.fromOfficeId)} to {getOfficeCode(entry.toOfficeId)}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-600">
+                              Routed by {getUserName(entry.fromUserId)}
+                              {entry.toUserId && ` to ${getUserName(entry.toUserId)}`}
+                            </p>
+                          </div>
+                          <div className="text-right text-[11px] text-slate-400">
+                            <p>{format(new Date(entry.timestamp), 'MMM d, yyyy')}</p>
+                            <p>{format(new Date(entry.timestamp), 'h:mm a')}</p>
+                          </div>
+                        </div>
+
+                        {entry.remarks && (
+                          <div className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-sm italic text-slate-700 border border-slate-100">
+                            "{entry.remarks}"
+                          </div>
                         )}
-                        {!entry.isAcknowledged && <p className="text-[10px] text-amber-600 mt-1">⏳ Awaiting acknowledgment</p>}
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 font-medium ${entry.isAcknowledged && entry.receivedAt ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {entry.isAcknowledged && entry.receivedAt
+                              ? `Acknowledged at ${format(new Date(entry.receivedAt), 'h:mm a')}`
+                              : 'Awaiting acknowledgment'}
+                          </span>
+                          {entry.toUserId && (
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-slate-600">
+                              Assigned to {getUserName(entry.toUserId)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )
                 })}
-                {/* Awaiting next action marker */}
-                {!['Completed', 'Cancelled'].includes(doc.status) && (
-                  <div className="flex gap-4">
-                    <div className="flex flex-col items-center">
-                      <div className="w-3 h-3 rounded-full border-2 border-slate-300 mt-1.5" />
-                    </div>
-                    <div className="text-xs text-slate-400 mt-1">Awaiting next action...</div>
-                  </div>
-                )}
               </div>
             </CardContent>
           </Card>
@@ -322,7 +416,7 @@ export default function DocumentDetail() {
           <div className="space-y-4 py-2">
             <Textarea value={remarkText} onChange={e => setRemarkText(e.target.value)} placeholder="Enter your remark..." rows={4} />
             <div className="flex items-center gap-2">
-              <input type="checkbox" id="internal" checked={remarkInternal} onChange={e => setRemarkInternal(e.target.checked)} className="rounded" />
+              <input type="checkbox" id="internal" checked={remarkInternal} onChange={e => setRemarkInternal(e.target.checked)} className="rounded" aria-label="Mark remark as internal" />
               <Label htmlFor="internal" className="text-sm">Internal note (not visible in public tracker)</Label>
             </div>
           </div>

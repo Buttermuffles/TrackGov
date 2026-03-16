@@ -19,6 +19,7 @@ const Reports = lazy(() => import('@/pages/Reports'))
 const Audit = lazy(() => import('@/pages/Audit'))
 const PublicTracker = lazy(() => import('@/pages/PublicTracker'))
 const Settings = lazy(() => import('@/pages/Settings'))
+const Permissions = lazy(() => import('@/pages/Permissions'))
 
 export default function App() {
   const applyTheme = useThemeStore(s => s.applyTheme)
@@ -51,6 +52,7 @@ export default function App() {
             <Route path="reports" element={<Reports />} />
             <Route path="audit" element={<Audit />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="permissions" element={<Permissions />} />
           </Route>
 
           {/* Catch-all */}

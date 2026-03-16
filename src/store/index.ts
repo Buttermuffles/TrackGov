@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import type { Document, Office, User, Notification, AuditEntry, UserRole, DocumentStatus, RoutingEntry, Remark } from '@/types'
 import { documents as mockDocs, offices as mockOffices, users as mockUsers, notifications as mockNotifs, auditTrail as mockAudit } from '@/lib/mockData'
 import { generateTrackingCode } from '@/lib/utils'
@@ -6,6 +7,8 @@ import { generateTrackingCode } from '@/lib/utils'
 interface AuthState {
   currentUser: User | null
   isAuthenticated: boolean
+  hasHydrated: boolean
+  setHasHydrated: (value: boolean) => void
   login: (email: string, password: string) => boolean
   logout: () => void
 }
@@ -17,22 +20,38 @@ const credentials: Record<string, { password: string; userId: string }> = {
   'staff@trackgov.gov.ph': { password: 'staff2024', userId: 'usr-4' },
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
-  currentUser: null,
-  isAuthenticated: false,
-  login: (email, password) => {
-    const cred = credentials[email]
-    if (cred && cred.password === password) {
-      const user = mockUsers.find(u => u.id === cred.userId)
-      if (user) {
-        set({ currentUser: user, isAuthenticated: true })
-        return true
-      }
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      currentUser: null,
+      isAuthenticated: false,
+      hasHydrated: false,
+      setHasHydrated: (value) => set({ hasHydrated: value }),
+      login: (email, password) => {
+        const cred = credentials[email]
+        if (cred && cred.password === password) {
+          const user = mockUsers.find(u => u.id === cred.userId)
+          if (user) {
+            set({ currentUser: user, isAuthenticated: true })
+            return true
+          }
+        }
+        return false
+      },
+      logout: () => set({ currentUser: null, isAuthenticated: false }),
+    }),
+    {
+      name: 'trackgov-auth',
+      partialize: (state) => ({
+        currentUser: state.currentUser,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true)
+      },
     }
-    return false
-  },
-  logout: () => set({ currentUser: null, isAuthenticated: false }),
-}))
+  )
+)
 
 interface DocumentState {
   documents: Document[]

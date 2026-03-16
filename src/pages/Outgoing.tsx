@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useState, useMemo, useEffect } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { DocStatusBadge } from '@/components/documents/DocStatusBadge'
 import { format } from 'date-fns'
 import { Search, Send, ChevronLeft, ChevronRight, ExternalLink, Check, Clock } from 'lucide-react'
 
@@ -16,10 +17,25 @@ export default function Outgoing() {
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
 
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [page, setPage] = useState(1)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '')
+  const [statusFilter, setStatusFilter] = useState<string>(searchParams.get('status') ?? 'all')
+  const [page, setPage] = useState(() => {
+    const parsed = Number(searchParams.get('page') ?? '1')
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  })
   const perPage = 15
+
+  useEffect(() => {
+    const nextSearch = searchParams.get('search')?.trim() ?? ''
+    const nextStatus = searchParams.get('status') ?? 'all'
+    const parsedPage = Number(searchParams.get('page') ?? '1')
+    const nextPage = Number.isFinite(parsedPage) && parsedPage > 0 ? parsedPage : 1
+
+    setSearch(nextSearch)
+    setStatusFilter(['all', 'acknowledged', 'pending'].includes(nextStatus) ? nextStatus : 'all')
+    setPage(nextPage)
+  }, [searchParams])
 
   // Outgoing: documents routed FROM the current user's office (most recent routing entry)
   const outgoingDocs = useMemo(() => {
@@ -42,11 +58,50 @@ export default function Outgoing() {
     return results.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
   }, [outgoingDocs, search, statusFilter])
 
-  const totalPages = Math.ceil(filtered.length / perPage)
-  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+  const docsToShow = filtered
+  const totalPages = Math.ceil(docsToShow.length / perPage)
+  const paged = docsToShow.slice((page - 1) * perPage, page * perPage)
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams)
+    const normalizedSearch = search.trim()
+
+    if (normalizedSearch) params.set('search', normalizedSearch)
+    else params.delete('search')
+
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    else params.delete('status')
+
+    if (page > 1) params.set('page', String(page))
+    else params.delete('page')
+
+    if (params.toString() !== searchParams.toString()) {
+      setSearchParams(params, { replace: true })
+    }
+  }, [search, statusFilter, page, searchParams, setSearchParams])
+
+  useEffect(() => {
+    const maxPage = Math.max(1, Math.ceil(docsToShow.length / perPage))
+    if (page > maxPage) setPage(maxPage)
+  }, [docsToShow.length, page])
 
   const getOfficeName = (oid: string) => offices.find(o => o.id === oid)?.code || oid
   const getUserName = (uid: string) => { const u = users.find(u => u.id === uid); return u ? `${u.firstName} ${u.lastName}` : '' }
+  const getOriginatorName = (originatorId: string, originOfficeId: string) => {
+    const o = users.find(u => u.id === originatorId)
+    if (o) return `${o.firstName} ${o.lastName}`
+    return getOfficeName(originOfficeId)
+  }
+  const getOriginDisplay = (originatorId: string, originOfficeId: string) => {
+    if (user?.role === 'Super Admin') return getOriginatorName(originatorId, originOfficeId)
+    return getOfficeName(originOfficeId)
+  }
+  const getProgress = (doc: any) => {
+    const path = [doc.originOfficeId, ...doc.routingHistory.map((rh: any) => rh.toOfficeId)]
+    return path.map(id => getOfficeName(id)).join(' → ')
+  }
+  const [showProgress, setShowProgress] = useState(false)
+  const [progressDoc, setProgressDoc] = useState<any>(null)
 
   const ackCount = outgoingDocs.filter(d => d.routingHistory[d.routingHistory.length - 1]?.isAcknowledged).length
   const pendCount = outgoingDocs.length - ackCount
@@ -56,6 +111,11 @@ export default function Outgoing() {
       <div>
         <h1 className="text-xl lg:text-2xl font-bold text-slate-900">Outgoing Documents</h1>
         <p className="text-sm text-slate-500 mt-1">Documents forwarded or routed from your office</p>
+      </div>
+      <div className="flex items-center gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link to="/incoming?create=1">Create a Document</Link>
+        </Button>
       </div>
 
       {/* Summary Cards */}
@@ -109,11 +169,11 @@ export default function Outgoing() {
                 <tr className="border-b bg-slate-50 text-left">
                   <th className="px-4 py-3 font-semibold text-xs text-slate-500">Tracking Code</th>
                   <th className="px-4 py-3 font-semibold text-xs text-slate-500">Title</th>
-                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Sent To</th>
-                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Action</th>
-                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Date Sent</th>
-                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Status</th>
+                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Progress</th>
                   <th className="px-4 py-3 font-semibold text-xs text-slate-500">Receipt</th>
+                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Sent To</th>
+                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Date Sent</th>
+                  <th className="px-4 py-3 font-semibold text-xs text-slate-500">Origin</th>
                   <th className="px-4 py-3 font-semibold text-xs text-slate-500"></th>
                 </tr>
               </thead>
@@ -123,16 +183,16 @@ export default function Outgoing() {
                   return (
                     <tr key={doc.id} className="border-b hover:bg-slate-50 transition">
                       <td className="px-4 py-3 font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</td>
-                      <td className="px-4 py-3 max-w-[240px]"><span className="line-clamp-1">{doc.title}</span></td>
-                      <td className="px-4 py-3 text-xs">{getOfficeName(lastRoute.toOfficeId)}{lastRoute.toUserId && <span className="block text-slate-400">{getUserName(lastRoute.toUserId)}</span>}</td>
-                      <td className="px-4 py-3"><Badge variant="outline" className="text-[10px]">{lastRoute.action}</Badge></td>
-                      <td className="px-4 py-3 text-xs text-slate-500">{format(new Date(lastRoute.timestamp), 'MMM d, h:mm a')}</td>
-                      <td className="px-4 py-3"><DocStatusBadge status={doc.status} /></td>
+                      <td className="px-4 py-3 max-w-60"><span className="line-clamp-1">{doc.title}</span></td>
+                      <td className="px-4 py-3 max-w-50"><button className="text-xs text-slate-600 hover:underline" onClick={() => { setProgressDoc(doc); setShowProgress(true) }}>{getProgress(doc)}</button></td>
                       <td className="px-4 py-3">
                         {lastRoute.isAcknowledged
                           ? <Badge variant="success" className="text-[10px]"><Check className="w-3 h-3 mr-1" />Received</Badge>
                           : <Badge variant="warning" className="text-[10px]"><Clock className="w-3 h-3 mr-1" />Pending</Badge>}
                       </td>
+                      <td className="px-4 py-3 text-xs">{getOfficeName(lastRoute.toOfficeId)}{lastRoute.toUserId && <span className="block text-slate-400">{getUserName(lastRoute.toUserId)}</span>}</td>
+                      <td className="px-4 py-3 text-xs text-slate-500">{format(new Date(lastRoute.timestamp), 'MMM d, h:mm a')}</td>
+                      <td className="px-4 py-3 text-xs">{getOriginDisplay(doc.originatorId, doc.originOfficeId)}</td>
                       <td className="px-4 py-3">
                         <Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link to={`/documents/${doc.id}`}><ExternalLink className="w-3.5 h-3.5" /></Link></Button>
                       </td>
@@ -153,10 +213,11 @@ export default function Outgoing() {
                     <div className="min-w-0 flex-1">
                       <p className="font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</p>
                       <p className="text-sm font-medium truncate mt-0.5">{doc.title}</p>
+                      <p className="text-xs text-slate-500 mt-1">Progress: {getProgress(doc)}</p>
+                      <p className="text-xs text-slate-500 mt-1">From: {getOriginDisplay(doc.originatorId, doc.originOfficeId)}</p>
                       <p className="text-xs text-slate-500 mt-1">→ {getOfficeName(lastRoute.toOfficeId)} · {format(new Date(lastRoute.timestamp), 'MMM d')}</p>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                      <DocStatusBadge status={doc.status} />
                       {lastRoute.isAcknowledged ? <Badge variant="success" className="text-[9px]">Received</Badge> : <Badge variant="warning" className="text-[9px]">Pending</Badge>}
                     </div>
                   </div>
@@ -171,6 +232,27 @@ export default function Outgoing() {
         </CardContent>
       </Card>
 
+      {/* Progress Dialog */}
+      <Dialog open={showProgress} onOpenChange={setShowProgress}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Routing Progress</DialogTitle>
+            <DialogDescription>Office path for document</DialogDescription>
+          </DialogHeader>
+          {progressDoc && (
+            <div className="space-y-2">
+              {progressDoc.routingHistory.map((rh: any, idx: number) => (
+                <p key={rh.id} className="text-sm">
+                  {idx === 0 ? getOfficeName(progressDoc.originOfficeId) : ''} {idx > 0 && '→ '} {getOfficeName(rh.toOfficeId)}
+                </p>
+              ))}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowProgress(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm">

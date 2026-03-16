@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,15 +8,11 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
-import { Label } from '@/components/ui/label'
 import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
-import { Spinner } from '@/components/ui/spinner'
 import { format } from 'date-fns'
-import { toast } from 'sonner'
 import {
-  Map, Search, Building2, ArrowRight, FileText, Eye, Camera,
-  Upload, ScanLine, ChevronRight, Clock, ExternalLink, X, ZoomIn, ZoomOut
+  Map, Search, Building2, ArrowRight, FileText, Eye,
+  ChevronRight, Clock, ExternalLink, ZoomIn, ZoomOut
 } from 'lucide-react'
 
 export default function RoutingMap() {
@@ -30,20 +26,7 @@ export default function RoutingMap() {
   const [search, setSearch] = useState('')
   const [zoom, setZoom] = useState(1)
 
-  // OCR State
-  const [showOcrDialog, setShowOcrDialog] = useState(false)
-  const [ocrImage, setOcrImage] = useState<string | null>(null)
-  const [ocrText, setOcrText] = useState('')
-  const [ocrLoading, setOcrLoading] = useState(false)
-  const [ocrProgress, setOcrProgress] = useState(0)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const getOfficeName = (oid: string) => offices.find(o => o.id === oid)?.name || oid
   const getOfficeCode = (oid: string) => offices.find(o => o.id === oid)?.code || oid
-  const getUserName = (uid: string) => {
-    const u = users.find(u => u.id === uid)
-    return u ? `${u.firstName} ${u.lastName}` : uid
-  }
 
   // Build office -> document mapping
   const officeDocMap = useMemo(() => {
@@ -105,6 +88,19 @@ export default function RoutingMap() {
     return offices.filter(o => o.name.toLowerCase().includes(q) || o.code.toLowerCase().includes(q))
   }, [offices, search])
 
+  const sortedFilteredOffices = useMemo(() => {
+    return [...filteredOffices].sort((a, b) => {
+      const aCurrent = officeDocMap[a.id]?.current || 0
+      const bCurrent = officeDocMap[b.id]?.current || 0
+      if (bCurrent !== aCurrent) return bCurrent - aCurrent
+      return a.code.localeCompare(b.code)
+    })
+  }, [filteredOffices, officeDocMap])
+
+  const activeOfficeCount = useMemo(() => {
+    return sortedFilteredOffices.filter(o => (officeDocMap[o.id]?.current || 0) > 0).length
+  }, [sortedFilteredOffices, officeDocMap])
+
   // office hex grid positions
   const officePositions = useMemo(() => {
     const cols = Math.ceil(Math.sqrt(offices.length))
@@ -132,48 +128,6 @@ export default function RoutingMap() {
     return maxY + 120
   }, [officePositions])
 
-  // OCR handler
-  const handleOcrUpload = useCallback(async (file: File) => {
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/bmp', 'image/tiff']
-    if (!allowedTypes.includes(file.type)) {
-      toast.error('Invalid file type', { description: 'Please upload a PNG, JPEG, WebP, BMP, or TIFF image.' })
-      return
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File too large', { description: 'Maximum file size is 10MB.' })
-      return
-    }
-    const url = URL.createObjectURL(file)
-    setOcrImage(url)
-    setOcrText('')
-    setOcrLoading(true)
-    setOcrProgress(0)
-    setShowOcrDialog(true)
-
-    try {
-      const Tesseract = await import('tesseract.js')
-      const result = await Tesseract.recognize(url, 'eng', {
-        logger: (m: { status: string; progress: number }) => {
-          if (m.status === 'recognizing text') {
-            setOcrProgress(Math.round(m.progress * 100))
-          }
-        },
-      })
-      setOcrText(result.data.text)
-      toast.success('OCR Complete', { description: `Extracted ${result.data.text.split(/\s+/).length} words from image.` })
-    } catch {
-      toast.error('OCR Failed', { description: 'Could not extract text from the image.' })
-    } finally {
-      setOcrLoading(false)
-    }
-  }, [])
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) handleOcrUpload(file)
-    e.target.value = ''
-  }
-
   return (
     <div className="space-y-4 lg:space-y-6">
       {/* Header */}
@@ -182,12 +136,7 @@ export default function RoutingMap() {
           <h1 className="text-xl lg:text-2xl font-bold text-slate-900">Routing Map</h1>
           <p className="text-sm text-slate-500 mt-1">Visual overview of document flow between offices</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-            <ScanLine className="w-4 h-4 mr-1" />OCR Scan
-          </Button>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFileChange} />
-        </div>
+        <div className="flex items-center gap-2" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-6">
@@ -209,8 +158,7 @@ export default function RoutingMap() {
                 width={svgWidth * zoom}
                 height={svgHeight * zoom}
                 viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                className="w-full"
-                style={{ minHeight: 300 }}
+                className="w-full min-h-75"
               >
                 <defs>
                   <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -340,15 +288,22 @@ export default function RoutingMap() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
                 <Input placeholder="Search offices..." value={search} onChange={e => setSearch(e.target.value)} className="pl-8 h-8 text-xs" />
               </div>
-              <ScrollArea className="max-h-48">
-                <div className="space-y-1">
-                  {filteredOffices.map(o => {
+              <div className="mb-2 flex items-center justify-between text-[11px] text-slate-500">
+                <span>{sortedFilteredOffices.length} offices</span>
+                <span>{activeOfficeCount} with active docs</span>
+              </div>
+              <div className="h-72 sm:h-80 overflow-y-auto rounded-md border border-slate-200 bg-slate-50/40 p-1 pr-2">
+                <div className="space-y-1 min-h-full">
+                  {sortedFilteredOffices.length === 0 && (
+                    <div className="py-8 text-center text-xs text-slate-400">No offices found.</div>
+                  )}
+                  {sortedFilteredOffices.map(o => {
                     const stats = officeDocMap[o.id] || { incoming: 0, current: 0, outgoing: 0 }
                     return (
                       <button
                         key={o.id}
                         onClick={() => { setSelectedOffice(selectedOffice === o.id ? null : o.id); setSelectedDoc(null) }}
-                        className={`w-full flex items-center gap-2 p-2 rounded text-left text-xs transition-colors ${selectedOffice === o.id ? 'bg-navy text-white' : 'hover:bg-slate-100'}`}
+                        className={`w-full flex items-center gap-2 p-2 rounded-md text-left text-xs border transition-colors ${selectedOffice === o.id ? 'bg-navy text-white border-navy' : 'bg-white border-transparent hover:bg-slate-100 hover:border-slate-200'}`}
                       >
                         <Building2 className="w-3.5 h-3.5 shrink-0" />
                         <div className="min-w-0 flex-1">
@@ -364,7 +319,7 @@ export default function RoutingMap() {
                     )
                   })}
                 </div>
-              </ScrollArea>
+              </div>
             </CardContent>
           </Card>
 
@@ -444,85 +399,6 @@ export default function RoutingMap() {
         </div>
       </div>
 
-      {/* OCR Dialog */}
-      <Dialog open={showOcrDialog} onOpenChange={setShowOcrDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-auto">
-          <DialogHeader>
-            <DialogTitle><ScanLine className="w-5 h-5 inline mr-2" />OCR Document Scanner</DialogTitle>
-            <DialogDescription>Extract text from scanned documents or images</DialogDescription>
-          </DialogHeader>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Image preview */}
-            <div>
-              <Label className="text-xs mb-2 block">Uploaded Image</Label>
-              {ocrImage ? (
-                <div className="relative rounded-lg border overflow-hidden bg-slate-50">
-                  <img src={ocrImage} alt="OCR input" className="w-full max-h-64 object-contain" />
-                  <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6 bg-white/80" onClick={() => { setOcrImage(null); setOcrText('') }}>
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
-              ) : (
-                <div
-                  className="h-40 border-2 border-dashed rounded-lg flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:border-blue-300 transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Upload className="w-8 h-8 mb-2" />
-                  <p className="text-xs">Click to upload an image</p>
-                </div>
-              )}
-              {ocrLoading && (
-                <div className="mt-3">
-                  <div className="flex items-center gap-2 text-xs text-slate-600">
-                    <Spinner size="sm" />
-                    <span>Recognizing text... {ocrProgress}%</span>
-                  </div>
-                  <div className="w-full bg-slate-200 rounded-full h-1.5 mt-1.5">
-                    <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${ocrProgress}%` }} />
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Extracted text */}
-            <div>
-              <Label className="text-xs mb-2 block">Extracted Text</Label>
-              {ocrText ? (
-                <div className="space-y-2">
-                  <ScrollArea className="h-52 rounded-lg border bg-white p-3">
-                    <pre className="text-xs text-slate-800 whitespace-pre-wrap font-mono">{ocrText}</pre>
-                  </ScrollArea>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => {
-                      navigator.clipboard.writeText(ocrText)
-                      toast.success('Copied to clipboard')
-                    }}
-                  >
-                    Copy Text
-                  </Button>
-                </div>
-              ) : (
-                <div className="h-52 border rounded-lg flex items-center justify-center text-slate-400 text-xs">
-                  {ocrLoading ? 'Processing...' : 'Upload an image to extract text'}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="flex items-center justify-between">
-            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-              <Camera className="w-4 h-4 mr-1" />Upload Another
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setShowOcrDialog(false)}>Close</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
