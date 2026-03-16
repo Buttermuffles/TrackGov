@@ -222,16 +222,21 @@ export default function Incoming() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3 items-center">
+      <div className="flex flex-col sm:flex-row gap-2 items-center">
         <div className="relative flex-1">
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <Input placeholder="Search by tracking code or title..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+          <Input
+            placeholder="Search by tracking code or title..."
+            className="flex h-9 w-full rounded-md border border-slate-200 bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950 disabled:cursor-not-allowed disabled:opacity-50 pl-9"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md bg-sky-50 ring-1 ring-sky-200 overflow-hidden">
+          <div className="flex rounded-md bg-purple-50 ring-1 ring-purple-200 overflow-hidden">
             <button
               type="button"
-              className={"p-2 " + (view === 'table' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
+              className={"p-2 " + (view === 'table' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
               onClick={() => setView('table')}
               aria-label="Table view"
               title="Table view"
@@ -240,7 +245,7 @@ export default function Incoming() {
             </button>
             <button
               type="button"
-              className={"p-2 " + (view === 'card' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
+              className={"p-2 " + (view === 'card' ? 'bg-purple-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
               onClick={() => setView('card')}
               aria-label="Card view"
               title="Card view"
@@ -292,7 +297,7 @@ export default function Incoming() {
                           <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
                         </TableCell>
                         <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
-                        <TableCell className="hidden lg:table-cell"><Badge variant="info" className="text-[10px]">{doc.documentType}</Badge></TableCell>
+                        <TableCell className="hidden lg:table-cell"><Badge variant="purple" className="text-[10px]">{doc.documentType}</Badge></TableCell>
                         <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
                         <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
                         <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
@@ -323,7 +328,7 @@ export default function Incoming() {
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start justify-between">
                       <p className="font-mono text-xs text-sky-700 font-semibold">{doc.trackingCode}</p>
-                      <Badge variant="info" className="text-[10px]">{doc.documentType}</Badge>
+                      <Badge variant="purple" className="text-[10px]">{doc.documentType}</Badge>
                     </div>
                     <h3 className="text-sm font-semibold line-clamp-2">{doc.title}</h3>
                     <p className="text-xs text-slate-500">From: {getOriginDisplay(doc)}</p>
