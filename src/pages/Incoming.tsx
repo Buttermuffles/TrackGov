@@ -290,7 +290,7 @@ export default function Incoming() {
                           <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
                         </TableCell>
                         <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
-                        <TableCell className="hidden lg:table-cell"><Badge variant="secondary" className="text-[10px]">{doc.documentType}</Badge></TableCell>
+                        <TableCell className="hidden lg:table-cell"><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></TableCell>
                         <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
                         <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
                         <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
