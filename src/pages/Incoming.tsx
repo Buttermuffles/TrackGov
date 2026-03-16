@@ -217,10 +217,21 @@ export default function Incoming() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="flex border rounded-md overflow-hidden">
+          <Button onClick={() => setShowReceiveForm(true)}><Plus className="w-4 h-4 mr-2" />Receive New Document</Button>
+        </div>
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-3 items-center">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Input placeholder="Search by tracking code or title..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md bg-sky-50 ring-1 ring-sky-200 overflow-hidden">
             <button
               type="button"
-              className={"p-2 " + (view === 'table' ? 'bg-slate-100 text-slate-900' : 'text-slate-500')}
+              className={"p-2 " + (view === 'table' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
               onClick={() => setView('table')}
               aria-label="Table view"
               title="Table view"
@@ -229,7 +240,7 @@ export default function Incoming() {
             </button>
             <button
               type="button"
-              className={"p-2 " + (view === 'card' ? 'bg-slate-100 text-slate-900' : 'text-slate-500')}
+              className={"p-2 " + (view === 'card' ? 'bg-sky-600 text-white' : 'text-slate-500 hover:bg-slate-100')}
               onClick={() => setView('card')}
               aria-label="Card view"
               title="Card view"
@@ -237,15 +248,6 @@ export default function Incoming() {
               <LayoutGrid className="w-4 h-4" />
             </button>
           </div>
-          <Button onClick={() => setShowReceiveForm(true)}><Plus className="w-4 h-4 mr-2" />Receive New Document</Button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <Input placeholder="Search by tracking code or title..." className="pl-9" value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <Select value={typeFilter} onValueChange={setTypeFilter}>
           <SelectTrigger className="w-full sm:w-40"><SelectValue placeholder="All Types" /></SelectTrigger>
@@ -290,7 +292,7 @@ export default function Incoming() {
                           <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
                         </TableCell>
                         <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
-                        <TableCell className="hidden lg:table-cell"><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></TableCell>
+                        <TableCell className="hidden lg:table-cell"><Badge variant="info" className="text-[10px]">{doc.documentType}</Badge></TableCell>
                         <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
                         <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
                         <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
@@ -321,7 +323,7 @@ export default function Incoming() {
                   <CardContent className="p-4 space-y-2">
                     <div className="flex items-start justify-between">
                       <p className="font-mono text-xs text-sky-700 font-semibold">{doc.trackingCode}</p>
-                      <Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge>
+                      <Badge variant="info" className="text-[10px]">{doc.documentType}</Badge>
                     </div>
                     <h3 className="text-sm font-semibold line-clamp-2">{doc.title}</h3>
                     <p className="text-xs text-slate-500">From: {getOriginDisplay(doc)}</p>
