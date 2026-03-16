@@ -155,12 +155,12 @@ export const SYSTEM_MODULES: ModuleDefinition[] = [
   },
   {
     id: 'audit_trail',
-    name: 'Audit Trail',
+    name: 'User Activity',
     group: 'Reports',
-    description: 'System-wide action audit log',
+    description: 'System-wide user activity log',
     actions: {
       create: 'N/A',
-      read: 'View full audit trail',
+      read: 'View full user activity log',
       update: 'N/A',
       delete: 'N/A',
     },

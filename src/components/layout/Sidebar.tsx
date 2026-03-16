@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore, useDocumentStore } from '@/store'
 import { useThemeStore } from '@/store/themeStore'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -11,7 +13,7 @@ import { getInitials } from '@/lib/utils'
 import {
   LayoutDashboard, FileInput, FileOutput, Files, Clock,
   RefreshCw, Map, Building2, Users, BarChart3, ClipboardList,
-  Settings, Shield, ChevronLeft, ChevronRight, Menu, X, Search
+  Settings, Shield, User, LogOut, ChevronLeft, ChevronRight, Menu, X, Search, Bell
 } from 'lucide-react'
 import { differenceInDays } from 'date-fns'
 
@@ -43,18 +45,20 @@ const navGroups = [
     items: [
       { to: '/offices', icon: Building2, label: 'Offices / Departments' },
       { to: '/users', icon: Users, label: 'Users' },
+      { to: '/profile', icon: User, label: 'Profile' },
     ],
   },
   {
     label: 'REPORTS',
     items: [
       { to: '/reports', icon: BarChart3, label: 'Reports & Analytics' },
-      { to: '/audit', icon: ClipboardList, label: 'User Activity' },
+      { to: '/user-activity', icon: ClipboardList, label: 'User Activity' },
     ],
   },
   {
     label: 'SYSTEM',
     items: [
+      { to: '/notifications', icon: Bell, label: 'Notifications' },
       { to: '/permissions', icon: Shield, label: 'Module Permissions' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ],
@@ -63,12 +67,15 @@ const navGroups = [
 
 export default function Sidebar() {
   const currentUser = useAuthStore(s => s.currentUser)
+  const logout = useAuthStore(s => s.logout)
   const documents = useDocumentStore(s => s.documents)
+  const navigate = useNavigate()
   // collapse state now stored globally so header can control it as well
   const collapsed = useThemeStore(s => s.sidebarCompact)
   const setCollapsed = useThemeStore(s => s.setSidebarCompact)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [navSearch, setNavSearch] = useState('')
+  const [showLogoutDialog, setShowLogoutDialog] = useState(false)
 
   // counts shown in the pending page are split into needsAck, assigned, overdue
   // use the same logic here so the sidebar badge matches the actual total pending items
@@ -172,6 +179,16 @@ export default function Sidebar() {
             </div>
           ))}
         </nav>
+
+        <div className="border-t border-white/20 mt-4 pt-4">
+          <button
+            onClick={() => setShowLogoutDialog(true)}
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-white hover:bg-navy-light transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            {!collapsed && <span>Logout</span>}
+          </button>
+        </div>
       </ScrollArea>
 
     </div>
@@ -205,6 +222,30 @@ export default function Sidebar() {
       <aside className={`hidden lg:flex flex-col shrink-0 bg-navy h-screen sticky top-0 transition-all duration-200 ${collapsed ? 'w-16' : 'w-64'} overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-blue-500/20 hover:scrollbar-thumb-blue-500/40 no-scrollbar`}>
         {sidebarContent}
       </aside>
+
+      <Dialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirm Logout</DialogTitle>
+            <DialogDescription>Are you sure you want to sign out of TrackGov?</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowLogoutDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setShowLogoutDialog(false)
+                logout()
+                navigate('/login')
+              }}
+            >
+              Logout
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

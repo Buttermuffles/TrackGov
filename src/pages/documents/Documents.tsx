@@ -1,18 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
-import { useDocumentStore, useOfficeStore, useUserStore } from '@/store'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
+import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
+import DeleteConfirmDialog from '@/components/shared/DeleteConfirmDialog'
+import PaginationControls from '@/components/shared/PaginationControls'
+import RoutingHistoryDialog from '@/components/shared/RoutingHistoryDialog'
+import { DocStatusBadge, PriorityBadge, DocTypeBadge } from '@/components/documents/DocStatusBadge'
+import { usePermission } from '@/hooks/usePermission'
 import { format } from 'date-fns'
-import type { DocumentStatus, DocumentType, Priority } from '@/types'
-import { Search, ChevronLeft, ChevronRight, FileText, ExternalLink, LayoutGrid, LayoutList, ArrowUpDown, Filter, X, Download } from 'lucide-react'
+import type { Document, DocumentStatus, DocumentType, Priority } from '@/types'
+import { Search, FileText, ExternalLink, LayoutGrid, LayoutList, Filter, X, Download, Trash2, Clock } from 'lucide-react'
 
 export default function Documents() {
-  const documents = useDocumentStore(s => s.documents)
+  const navigate = useNavigate()
+  const user = useAuthStore(s => s.currentUser)
+  const { documents, deleteDocument } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
   const [searchParams] = useSearchParams()
@@ -25,7 +32,9 @@ export default function Documents() {
   const [view, setView] = useState<'table' | 'card'>('table')
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
-  const perPage = 20
+  const [pageSize, setPageSize] = useState(20)
+  const [deletingDoc, setDeletingDoc] = useState<Document | null>(null)
+  const [historyDoc, setHistoryDoc] = useState<Document | null>(null)
 
   useEffect(() => {
     setSearch(searchParams.get('search')?.trim() ?? '')
@@ -43,8 +52,8 @@ export default function Documents() {
     return r
   }, [documents, search, statusFilter, typeFilter, priorityFilter, officeFilter, sortBy])
 
-  const totalPages = Math.ceil(filtered.length / perPage)
-  const paged = filtered.slice((page - 1) * perPage, page * perPage)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize))
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
   const getOfficeName = (oid: string) => offices.find(o => o.id === oid)?.code || oid
   const getOriginatorName = (originatorId: string, originOfficeId: string) => {
     const originator = users.find(u => u.id === originatorId)
@@ -55,6 +64,27 @@ export default function Documents() {
   const statuses: DocumentStatus[] = ['Received','In Review','For Signature','For Routing','In Transit','Action Taken','Returned','Completed','On Hold','Cancelled']
   const docTypes: DocumentType[] = ['Letter','Memorandum','Resolution','Ordinance','Contract','Report','Request','Petition','Certificate','Voucher','Purchase Order','Other']
   const priorities: Priority[] = ['Low','Normal','High','Urgent']
+  const { can } = usePermission()
+  const canDeleteDocuments = can('documents_all', 'delete')
+
+  const handleDelete = () => {
+    if (!deletingDoc) return
+    try {
+      deleteDocument(deletingDoc.id)
+      setDeletingDoc(null)
+      toast.success('Item deleted successfully.')
+    } catch {
+      toast.error('Something went wrong. Please try again.')
+    }
+  }
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  useEffect(() => {
+    setPage(1)
+  }, [pageSize])
 
   return (
     <div className="space-y-4 lg:space-y-6">
@@ -77,15 +107,43 @@ export default function Documents() {
 
       {view === 'table' && <Card><CardContent className="p-0">
         <div className="hidden md:block overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-slate-50 text-left"><th className="px-4 py-3 text-xs font-semibold text-slate-500">Tracking</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Title</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Type</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Status</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Originator</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Office</th><th className="px-4 py-3 text-xs font-semibold text-slate-500">Date</th><th className="px-4 py-3"></th></tr></thead><tbody>
-          {paged.map(doc => <tr key={doc.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</td><td className="px-4 py-3 max-w-[260px]"><span className="line-clamp-1 font-medium">{doc.title}</span></td><td className="px-4 py-3"><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></td><td className="px-4 py-3"><DocStatusBadge status={doc.status} /></td><td className="px-4 py-3 text-xs">{getOriginatorName(doc.originatorId, doc.originOfficeId)}</td><td className="px-4 py-3 text-xs">{getOfficeName(doc.currentOfficeId)}</td><td className="px-4 py-3 text-xs text-slate-500">{format(new Date(doc.dateCreated), 'MMM d, yyyy')}</td><td className="px-4 py-3"><Button asChild variant="ghost" size="icon" className="h-7 w-7"><Link to={'/documents/' + doc.id}><ExternalLink className="w-3.5 h-3.5" /></Link></Button></td></tr>)}
+          {paged.map(doc => <tr key={doc.id} className="border-b hover:bg-slate-50"><td className="px-4 py-3 font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</td><td className="px-4 py-3 max-w-65"><span className="line-clamp-1 font-medium">{doc.title}</span></td><td className="px-4 py-3"><DocTypeBadge type={doc.documentType} /></td><td className="px-4 py-3"><DocStatusBadge status={doc.status} /></td><td className="px-4 py-3 text-xs">{getOriginatorName(doc.originatorId, doc.originOfficeId)}</td><td className="px-4 py-3 text-xs">{getOfficeName(doc.currentOfficeId)}</td><td className="px-4 py-3 text-xs text-slate-500">{format(new Date(doc.dateCreated), 'MMM d, yyyy')}</td><td className="px-4 py-3"><div className="flex items-center justify-end gap-1.5"><Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-blue-600 hover:bg-blue-700 text-white border-0 gap-1 transition-colors" onClick={() => navigate(`/documents/${doc.id}`)}><ExternalLink className="w-3 h-3" /></Button><Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-orange-600 hover:bg-orange-700 text-white border-0 gap-1 transition-colors" onClick={() => setHistoryDoc(doc)}><Clock className="w-3 h-3" /></Button>{canDeleteDocuments && <Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-red-600 hover:bg-red-700 text-white border-0 gap-1 transition-colors" onClick={() => setDeletingDoc(doc)}><Trash2 className="w-3 h-3" /></Button>}</div></td></tr>)}
         </tbody></table></div>
         <div className="md:hidden divide-y">{paged.map(doc => <Link key={doc.id} to={'/documents/' + doc.id} className="block p-3 hover:bg-slate-50"><div className="flex items-start justify-between gap-2"><div className="min-w-0 flex-1"><p className="font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</p><p className="text-sm font-medium truncate mt-0.5">{doc.title}</p></div><div className="flex flex-col items-end gap-1"><DocStatusBadge status={doc.status} /><PriorityBadge priority={doc.priority} /></div></div></Link>)}</div>
         {paged.length === 0 && <div className="text-center py-12"><FileText className="w-12 h-12 text-slate-200 mx-auto mb-3" /><p className="text-sm text-slate-400">No documents</p></div>}
       </CardContent></Card>}
 
-      {view === 'card' && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">{paged.map(doc => <Link key={doc.id} to={'/documents/' + doc.id}><Card className="hover:shadow-md transition h-full"><CardContent className="p-4 space-y-2"><div className="flex items-start justify-between"><p className="font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</p><PriorityBadge priority={doc.priority} /></div><h3 className="text-sm font-semibold line-clamp-2">{doc.title}</h3><div className="flex flex-wrap gap-1"><DocStatusBadge status={doc.status} /><Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge></div></CardContent></Card></Link>)}</div>}
+      {view === 'card' && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">{paged.map(doc => <Card key={doc.id} className="h-full border-slate-200 bg-linear-to-b from-white to-slate-50/40 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-lg"><CardContent className="p-4 space-y-2.5"><div className="flex items-start justify-between"><p className="font-mono text-xs text-blue-700 font-semibold">{doc.trackingCode}</p><PriorityBadge priority={doc.priority} /></div><h3 className="text-sm font-semibold line-clamp-2">{doc.title}</h3><div className="flex flex-wrap gap-1"><DocStatusBadge status={doc.status} /><DocTypeBadge type={doc.documentType} /></div><div className="pt-1 border-t border-slate-100 flex items-center gap-1.5"><Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-blue-600 hover:bg-blue-700 text-white border-0 gap-1 transition-colors" onClick={() => navigate(`/documents/${doc.id}`)}><ExternalLink className="w-3 h-3" />View</Button><Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-orange-600 hover:bg-orange-700 text-white border-0 gap-1 transition-colors" onClick={() => setHistoryDoc(doc)}><Clock className="w-3 h-3" />History</Button>{canDeleteDocuments && <Button size="sm" className="h-7 px-2.5 text-[11px] font-medium bg-red-600 hover:bg-red-700 text-white border-0 gap-1 transition-colors" onClick={() => setDeletingDoc(doc)}><Trash2 className="w-3 h-3" />Delete</Button>}</div></CardContent></Card>)}</div>}
 
-      {totalPages > 1 && <div className="flex items-center justify-between text-sm"><span className="text-slate-500">{filtered.length} docs</span><div className="flex items-center gap-1"><Button variant="outline" size="icon" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft className="w-4 h-4" /></Button><span className="px-3 text-xs">{page}/{totalPages}</span><Button variant="outline" size="icon" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight className="w-4 h-4" /></Button></div></div>}
+      <DeleteConfirmDialog
+        open={!!deletingDoc}
+        itemLabel={deletingDoc?.trackingCode}
+        onOpenChange={open => { if (!open) setDeletingDoc(null) }}
+        onConfirm={handleDelete}
+      />
+
+      {filtered.length > 0 && (
+        <PaginationControls
+          totalItems={filtered.length}
+          currentPage={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+          itemLabel="documents"
+          compact={view === 'card'}
+        />
+      )}
+
+      <RoutingHistoryDialog
+        open={!!historyDoc}
+        document={historyDoc}
+        onOpenChange={(open) => { if (!open) setHistoryDoc(null) }}
+        getOfficeName={getOfficeName}
+        getUserName={(id: string) => {
+          const u = users.find(u => u.id === id)
+          return u ? `${u.firstName} ${u.lastName}` : '—'
+        }}
+      />
     </div>
   )
 }

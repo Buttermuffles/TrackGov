@@ -4,22 +4,24 @@ import { PageLoader } from '@/components/ui/spinner'
 import { useThemeStore } from '@/store/themeStore'
 import AppLayout from '@/components/layout/AppLayout'
 
-const Login = lazy(() => import('@/pages/Login'))
-const Dashboard = lazy(() => import('@/pages/Dashboard'))
-const Incoming = lazy(() => import('@/pages/Incoming'))
-const Outgoing = lazy(() => import('@/pages/Outgoing'))
-const Documents = lazy(() => import('@/pages/Documents'))
-const DocumentDetail = lazy(() => import('@/pages/DocumentDetail'))
-const Pending = lazy(() => import('@/pages/Pending'))
-const Routing = lazy(() => import('@/pages/Routing'))
-const RoutingMap = lazy(() => import('@/pages/RoutingMap'))
-const Offices = lazy(() => import('@/pages/Offices'))
-const UsersPage = lazy(() => import('@/pages/Users'))
-const Reports = lazy(() => import('@/pages/Reports'))
-const Audit = lazy(() => import('@/pages/Audit'))
-const PublicTracker = lazy(() => import('@/pages/PublicTracker'))
-const Settings = lazy(() => import('@/pages/Settings'))
-const Permissions = lazy(() => import('@/pages/Permissions'))
+const Login = lazy(() => import('@/pages/auth/Login'))
+const Dashboard = lazy(() => import('@/pages/admin/Dashboard'))
+const Incoming = lazy(() => import('@/pages/documents/Incoming'))
+const Outgoing = lazy(() => import('@/pages/documents/Outgoing'))
+const Documents = lazy(() => import('@/pages/documents/Documents'))
+const DocumentDetail = lazy(() => import('@/pages/documents/DocumentDetail'))
+const Pending = lazy(() => import('@/pages/routing/Pending'))
+const Routing = lazy(() => import('@/pages/routing/Routing'))
+const RoutingMap = lazy(() => import('@/pages/routing/RoutingMap'))
+const Offices = lazy(() => import('@/pages/admin/Offices'))
+const UsersPage = lazy(() => import('@/pages/admin/Users'))
+const Reports = lazy(() => import('@/pages/admin/Reports'))
+const UserActivity = lazy(() => import('@/pages/admin/UserActivity'))
+const Profile = lazy(() => import('@/pages/admin/Profile'))
+const PublicTracker = lazy(() => import('@/pages/public/PublicTracker'))
+const Settings = lazy(() => import('@/pages/admin/Settings'))
+const Permissions = lazy(() => import('@/pages/admin/Permissions'))
+const Notifications = lazy(() => import('@/pages/notifications/Notifications'))
 
 export default function App() {
   const applyTheme = useThemeStore(s => s.applyTheme)
@@ -30,7 +32,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Suspense fallback={<PageLoader message="Loading page..." />}>
+
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<Login />} />
@@ -49,8 +51,10 @@ export default function App() {
             <Route path="routing-map" element={<RoutingMap />} />
             <Route path="offices" element={<Offices />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="profile" element={<Profile />} />
             <Route path="reports" element={<Reports />} />
-            <Route path="audit" element={<Audit />} />
+            <Route path="user-activity" element={<UserActivity />} />
+            <Route path="notifications" element={<Notifications />} />
             <Route path="settings" element={<Settings />} />
             <Route path="permissions" element={<Permissions />} />
           </Route>
@@ -58,7 +62,7 @@ export default function App() {
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
-      </Suspense>
+
     </BrowserRouter>
   )
 }

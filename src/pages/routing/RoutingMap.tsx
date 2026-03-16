@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,7 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusBadge'
 import { format } from 'date-fns'
 import {
-  Map, Search, Building2, ArrowRight, FileText, Eye,
+  Map as MapIcon, Search, Building2, ArrowRight, FileText, Eye,
   ChevronRight, Clock, ExternalLink, ZoomIn, ZoomOut
 } from 'lucide-react'
 
@@ -25,6 +25,16 @@ export default function RoutingMap() {
   const [selectedDoc, setSelectedDoc] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [zoom, setZoom] = useState(1)
+  const [officePositions, setOfficePositions] = useState<Array<{
+    id: string
+    code: string
+    name: string
+    x: number
+    y: number
+  }>>([])
+  const [draggingOfficeId, setDraggingOfficeId] = useState<string | null>(null)
+  const dragOffsetRef = useRef({ x: 0, y: 0 })
+  const svgRef = useRef<SVGSVGElement | null>(null)
 
   const getOfficeCode = (oid: string) => offices.find(o => o.id === oid)?.code || oid
 
@@ -101,22 +111,88 @@ export default function RoutingMap() {
     return sortedFilteredOffices.filter(o => (officeDocMap[o.id]?.current || 0) > 0).length
   }, [sortedFilteredOffices, officeDocMap])
 
-  // office hex grid positions
-  const officePositions = useMemo(() => {
-    const cols = Math.ceil(Math.sqrt(offices.length))
-    return offices.map((o, i) => {
-      const row = Math.floor(i / cols)
-      const col = i % cols
-      const offsetX = row % 2 === 1 ? 75 : 0
-      return {
-        id: o.id,
-        code: o.code,
-        name: o.name,
-        x: col * 150 + offsetX + 80,
-        y: row * 130 + 60,
-      }
+  useEffect(() => {
+    setOfficePositions(current => {
+      const existing = new Map(current.map(position => [position.id, position]))
+      const cols = Math.ceil(Math.sqrt(offices.length || 1))
+
+      return offices.map((office, index) => {
+        const saved = existing.get(office.id)
+        if (saved) {
+          return {
+            ...saved,
+            code: office.code,
+            name: office.name,
+          }
+        }
+
+        const row = Math.floor(index / cols)
+        const col = index % cols
+        const offsetX = row % 2 === 1 ? 75 : 0
+
+        return {
+          id: office.id,
+          code: office.code,
+          name: office.name,
+          x: col * 150 + offsetX + 80,
+          y: row * 130 + 60,
+        }
+      })
     })
   }, [offices])
+
+  const getSvgPoint = (clientX: number, clientY: number) => {
+    const svg = svgRef.current
+    if (!svg) return { x: 0, y: 0 }
+
+    const point = svg.createSVGPoint()
+    point.x = clientX
+    point.y = clientY
+
+    const transformed = point.matrixTransform(svg.getScreenCTM()?.inverse())
+    return {
+      x: transformed.x / zoom,
+      y: transformed.y / zoom,
+    }
+  }
+
+  const handleOfficePointerDown = (officeId: string, event: React.PointerEvent<SVGGElement>) => {
+    event.stopPropagation()
+    const position = officePositions.find(item => item.id === officeId)
+    if (!position) return
+
+    const point = getSvgPoint(event.clientX, event.clientY)
+    dragOffsetRef.current = {
+      x: point.x - position.x,
+      y: point.y - position.y,
+    }
+    setDraggingOfficeId(officeId)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handleSvgPointerMove = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!draggingOfficeId) return
+
+    const point = getSvgPoint(event.clientX, event.clientY)
+    setOfficePositions(current =>
+      current.map(position =>
+        position.id === draggingOfficeId
+          ? {
+              ...position,
+              x: Math.max(56, Math.min(svgWidth - 56, point.x - dragOffsetRef.current.x)),
+              y: Math.max(56, Math.min(svgHeight - 56, point.y - dragOffsetRef.current.y)),
+            }
+          : position
+      )
+    )
+  }
+
+  const stopDraggingOffice = (event?: React.PointerEvent<SVGSVGElement | SVGGElement>) => {
+    if (event?.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setDraggingOfficeId(null)
+  }
 
   const svgWidth = useMemo(() => {
     const maxX = Math.max(...officePositions.map(p => p.x))
@@ -145,7 +221,7 @@ export default function RoutingMap() {
           <Card>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold"><Map className="w-4 h-4 inline mr-1" />Office Routing Network</CardTitle>
+                <CardTitle className="text-sm font-semibold"><MapIcon className="w-4 h-4 inline mr-1" />Office Routing Network</CardTitle>
                 <div className="flex items-center gap-1">
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setZoom(z => Math.max(0.5, z - 0.1))}><ZoomOut className="w-3.5 h-3.5" /></Button>
                   <span className="text-xs text-slate-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
@@ -155,10 +231,14 @@ export default function RoutingMap() {
             </CardHeader>
             <CardContent className="p-0 overflow-auto">
               <svg
+                ref={svgRef}
                 width={svgWidth * zoom}
                 height={svgHeight * zoom}
                 viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                className="w-full min-h-75"
+                className="w-full min-h-75 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_42%)]"
+                onPointerMove={handleSvgPointerMove}
+                onPointerUp={stopDraggingOffice}
+                onPointerLeave={stopDraggingOffice}
               >
                 <defs>
                   <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -169,89 +249,101 @@ export default function RoutingMap() {
                   </marker>
                 </defs>
 
-                {/* Edges */}
-                {routingEdges.map((edge, i) => {
-                  const from = officePositions.find(p => p.id === edge.from)
-                  const to = officePositions.find(p => p.id === edge.to)
-                  if (!from || !to) return null
-                  const isHighlighted = selectedOffice && (edge.from === selectedOffice || edge.to === selectedOffice)
-                  const dx = to.x - from.x
-                  const dy = to.y - from.y
-                  const len = Math.sqrt(dx * dx + dy * dy)
-                  const offsetX = (dx / len) * 40
-                  const offsetY = (dy / len) * 40
-                  return (
-                    <g key={i}>
-                      <line
-                        x1={from.x + offsetX}
-                        y1={from.y + offsetY}
-                        x2={to.x - offsetX}
-                        y2={to.y - offsetY}
-                        stroke={isHighlighted ? '#1D4ED8' : '#cbd5e1'}
-                        strokeWidth={isHighlighted ? 2 : 1}
-                        markerEnd={isHighlighted ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
-                        opacity={isHighlighted ? 1 : 0.5}
-                      />
-                      {isHighlighted && (
-                        <text
-                          x={(from.x + to.x) / 2}
-                          y={(from.y + to.y) / 2 - 8}
-                          textAnchor="middle"
-                          className="text-[9px] fill-blue-700 font-medium"
-                        >
-                          {edge.count}x
-                        </text>
-                      )}
-                    </g>
-                  )
-                })}
+                <g transform={`scale(${zoom})`}>
+                  {/* Edges */}
+                  {routingEdges.map((edge, i) => {
+                    const from = officePositions.find(p => p.id === edge.from)
+                    const to = officePositions.find(p => p.id === edge.to)
+                    if (!from || !to) return null
+                    const isHighlighted = selectedOffice && (edge.from === selectedOffice || edge.to === selectedOffice)
+                    const dx = to.x - from.x
+                    const dy = to.y - from.y
+                    const len = Math.sqrt(dx * dx + dy * dy)
+                    const offsetX = (dx / len) * 40
+                    const offsetY = (dy / len) * 40
+                    return (
+                      <g key={i}>
+                        <line
+                          x1={from.x + offsetX}
+                          y1={from.y + offsetY}
+                          x2={to.x - offsetX}
+                          y2={to.y - offsetY}
+                          stroke={isHighlighted ? '#1D4ED8' : '#cbd5e1'}
+                          strokeWidth={isHighlighted ? 2 : 1}
+                          markerEnd={isHighlighted ? 'url(#arrowhead-active)' : 'url(#arrowhead)'}
+                          opacity={isHighlighted ? 1 : 0.5}
+                        />
+                        {isHighlighted && (
+                          <text
+                            x={(from.x + to.x) / 2}
+                            y={(from.y + to.y) / 2 - 8}
+                            textAnchor="middle"
+                            className="text-[9px] fill-blue-700 font-medium"
+                          >
+                            {edge.count}x
+                          </text>
+                        )}
+                      </g>
+                    )
+                  })}
 
-                {/* Nodes */}
-                {officePositions.map(pos => {
-                  const stats = officeDocMap[pos.id] || { incoming: 0, current: 0, outgoing: 0 }
-                  const isSelected = selectedOffice === pos.id
-                  const hasActive = stats.current > 0
-                  return (
-                    <g
-                      key={pos.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelectedOffice(isSelected ? null : pos.id)}
-                    >
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={isSelected ? 42 : 36}
-                        fill={isSelected ? '#1E3A5F' : hasActive ? '#EFF6FF' : '#f8fafc'}
-                        stroke={isSelected ? '#CA8A04' : hasActive ? '#1D4ED8' : '#e2e8f0'}
-                        strokeWidth={isSelected ? 3 : 2}
-                      />
-                      <text
-                        x={pos.x}
-                        y={pos.y - 4}
-                        textAnchor="middle"
-                        className={`text-[11px] font-bold ${isSelected ? 'fill-white' : 'fill-slate-900'}`}
+                  {/* Nodes */}
+                  {officePositions.map(pos => {
+                    const stats = officeDocMap[pos.id] || { incoming: 0, current: 0, outgoing: 0 }
+                    const isSelected = selectedOffice === pos.id
+                    const hasActive = stats.current > 0
+                    return (
+                      <g
+                        key={pos.id}
+                        className={draggingOfficeId === pos.id ? 'cursor-grabbing' : 'cursor-grab'}
+                        onPointerDown={event => handleOfficePointerDown(pos.id, event)}
+                        onPointerUp={stopDraggingOffice}
+                        onClick={() => setSelectedOffice(isSelected ? null : pos.id)}
                       >
-                        {pos.code}
-                      </text>
-                      <text
-                        x={pos.x}
-                        y={pos.y + 10}
-                        textAnchor="middle"
-                        className={`text-[8px] ${isSelected ? 'fill-blue-200' : 'fill-slate-500'}`}
-                      >
-                        {stats.current} docs
-                      </text>
-                      {stats.current > 0 && !isSelected && (
-                        <circle cx={pos.x + 28} cy={pos.y - 28} r={9} fill="#EF4444" stroke="white" strokeWidth={2} />
-                      )}
-                      {stats.current > 0 && !isSelected && (
-                        <text x={pos.x + 28} y={pos.y - 24} textAnchor="middle" className="text-[9px] font-bold fill-white">
-                          {stats.current}
+                        <circle
+                          cx={pos.x}
+                          cy={pos.y}
+                          r={isSelected ? 48 : hasActive ? 44 : 40}
+                          fill="rgba(37, 99, 235, 0.08)"
+                          className={hasActive ? 'animate-pulse' : ''}
+                        />
+                        <circle
+                          cx={pos.x}
+                          cy={pos.y}
+                          r={isSelected ? 42 : 36}
+                          fill={isSelected ? '#1E3A5F' : hasActive ? '#EFF6FF' : '#f8fafc'}
+                          stroke={isSelected ? '#CA8A04' : hasActive ? '#1D4ED8' : '#e2e8f0'}
+                          strokeWidth={isSelected ? 3 : 2}
+                          className={draggingOfficeId ? 'transition-none' : 'transition-all duration-150'}
+                        />
+                        <text
+                          x={pos.x}
+                          y={pos.y - 4}
+                          textAnchor="middle"
+                          className={`text-[11px] font-bold ${isSelected ? 'fill-white' : 'fill-slate-900'}`}
+                        >
+                          {pos.code}
                         </text>
-                      )}
-                    </g>
-                  )
-                })}
+                        <text
+                          x={pos.x}
+                          y={pos.y + 10}
+                          textAnchor="middle"
+                          className={`text-[8px] ${isSelected ? 'fill-blue-200' : 'fill-slate-500'}`}
+                        >
+                          {stats.current} docs
+                        </text>
+                        {stats.current > 0 && !isSelected && (
+                          <circle cx={pos.x + 28} cy={pos.y - 28} r={9} fill="#EF4444" stroke="white" strokeWidth={2} />
+                        )}
+                        {stats.current > 0 && !isSelected && (
+                          <text x={pos.x + 28} y={pos.y - 24} textAnchor="middle" className="text-[9px] font-bold fill-white">
+                            {stats.current}
+                          </text>
+                        )}
+                      </g>
+                    )
+                  })}
+                </g>
               </svg>
             </CardContent>
           </Card>

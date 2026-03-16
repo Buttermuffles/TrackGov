@@ -1,15 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate, Link } from 'react-router-dom'
-import { useAuthStore, useNotificationStore } from '@/store'
+import { useAuthStore } from '@/store'
 import { useThemeStore } from '@/store/themeStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { getInitials } from '@/lib/utils'
-import { Search, Bell, LogOut, User, ChevronRight, Clock, Menu } from 'lucide-react'
+import { Search, LogOut, User, ChevronRight, Clock, Menu } from 'lucide-react'
+import NotificationBell from '@/components/notifications/NotificationBell'
 import { format } from 'date-fns'
 
 const searchableModules = [
@@ -22,8 +21,9 @@ const searchableModules = [
   { path: '/routing-map', terms: ['routing map', 'map'] },
   { path: '/offices', terms: ['offices', 'departments'] },
   { path: '/users', terms: ['users', 'accounts', 'staff'] },
+  { path: '/profile', terms: ['profile', 'my profile', 'account'] },
   { path: '/reports', terms: ['reports', 'analytics'] },
-  { path: '/audit', terms: ['audit', 'audit trail', 'logs'] },
+  { path: '/user-activity', terms: ['activity', 'user activity', 'logs', 'audit'] },
   { path: '/settings', terms: ['settings', 'preferences', 'theme'] },
 ] as const
 
@@ -40,8 +40,9 @@ const pathLabels: Record<string, string> = {
   '/routing-map': 'Routing Map',
   '/offices': 'Offices / Departments',
   '/users': 'Users',
+  '/profile': 'My Profile',
   '/reports': 'Reports & Analytics',
-  '/audit': 'Audit Trail',
+  '/user-activity': 'User Activity',
   '/settings': 'Settings',
 }
 
@@ -53,18 +54,10 @@ export default function Header() {
   // sidebar collapsed state comes from theme store
   const sidebarCollapsed = useThemeStore(s => s.sidebarCompact)
   const setSidebarCollapsed = useThemeStore(s => s.setSidebarCompact)
-  const notifications = useNotificationStore(s => s.notifications)
-  const markAsRead = useNotificationStore(s => s.markAsRead)
-  const markAllAsRead = useNotificationStore(s => s.markAllAsRead)
   const [now, setNow] = useState(new Date())
   const [searchValue, setSearchValue] = useState('')
-  const [notifOpen, setNotifOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement | null>(null)
 
-  const userNotifs = currentUser
-    ? notifications.filter(n => n.userId === currentUser.id)
-    : []
-  const unreadCount = userNotifs.filter(n => !n.isRead).length
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000)
@@ -183,46 +176,9 @@ export default function Header() {
       </div>
 
       {/* Notifications */}
-      <DropdownMenu open={notifOpen} onOpenChange={(open) => {
-          setNotifOpen(open)
-          if (open && currentUser) {
-            // when the user opens the list we can clear the unread badge
-            markAllAsRead(currentUser.id)
-          }
-        }}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="w-4 h-4" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">{unreadCount}</span>
-            )}
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-80">
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <ScrollArea className="h-64">
-            {userNotifs.length === 0 ? (
-              <div className="p-4 text-center text-sm text-slate-400">No notifications</div>
-            ) : (
-              userNotifs.slice(0, 10).map(notif => (
-                <DropdownMenuItem
-                  key={notif.id}
-                  onClick={() => {
-                    markAsRead(notif.id)
-                    if (notif.documentId) navigate(`/documents/${notif.documentId}`)
-                  }}
-                  className={`flex flex-col items-start gap-1 p-3 ${!notif.isRead ? 'bg-blue-50' : ''}`}
-                >
-                  <span className="font-medium text-xs">{notif.title}</span>
-                  <span className="text-[11px] text-slate-500 line-clamp-2">{notif.message}</span>
-                  <span className="text-[10px] text-slate-400">{format(new Date(notif.createdAt), 'MMM d, h:mm a')}</span>
-                </DropdownMenuItem>
-              ))
-            )}
-          </ScrollArea>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="hidden lg:block">
+        <NotificationBell />
+      </div>
 
       {/* User menu */}
       {currentUser && (
@@ -241,7 +197,7 @@ export default function Header() {
           <DropdownMenuContent align="end" className="w-52">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem><User className="w-4 h-4 mr-2" />Profile</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate('/profile')}><User className="w-4 h-4 mr-2" />Profile</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
               <LogOut className="w-4 h-4 mr-2" />Sign Out

@@ -9,8 +9,11 @@ import { DocStatusBadge, PriorityBadge } from '@/components/documents/DocStatusB
 import { format, differenceInDays } from 'date-fns'
 import { Clock, CheckCircle, AlertTriangle, FileText, Eye, ArrowRight, Search } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { usePermission } from '@/hooks/usePermission'
 
 export default function Pending() {
+  const { can } = usePermission()
+  const canAcknowledge = can('routing_forward', 'update')
   const user = useAuthStore(s => s.currentUser)
   const { documents, acknowledgeDocument } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
@@ -71,7 +74,7 @@ export default function Pending() {
                 {lr.remarks && <p className="text-xs text-slate-600 italic mt-1">"{lr.remarks}"</p>}
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                <Button size="sm" onClick={() => user && acknowledgeDocument(doc.id, user.id)}><CheckCircle className="w-4 h-4 mr-1" />Acknowledge</Button>
+                {canAcknowledge && <Button size="sm" onClick={() => user && acknowledgeDocument(doc.id, user.id)}><CheckCircle className="w-4 h-4 mr-1" />Acknowledge</Button>}
                 <Button asChild variant="outline" size="sm"><Link to={'/documents/' + doc.id}><Eye className="w-4 h-4 mr-1" />View</Link></Button>
               </div>
             </CardContent></Card>

@@ -216,6 +216,7 @@ interface NotificationState {
   markAsRead: (id: string) => void
   markAllAsRead: (userId: string) => void
   addNotification: (notif: Omit<Notification, 'id' | 'createdAt'>) => void
+  removeNotification: (id: string) => void
 }
 
 export const useNotificationStore = create<NotificationState>((set) => ({
@@ -234,8 +235,11 @@ export const useNotificationStore = create<NotificationState>((set) => ({
     set(state => ({
       notifications: [{ ...notifData, id: `notif-${Date.now()}`, createdAt: new Date() }, ...state.notifications],
     }))
-  },
-}))
+  },  removeNotification: (id) => {
+    set(state => ({
+      notifications: state.notifications.filter(n => n.id !== id),
+    }))
+  },}))
 
 interface AuditState {
   auditTrail: AuditEntry[]

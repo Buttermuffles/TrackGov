@@ -22,16 +22,27 @@ import {
   FileText, Clock, MapPin, Paperclip, ChevronDown,
   Download, Lock, Eye
 } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 
 export default function DocumentDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const user = useAuthStore(s => s.currentUser)
+  const { can } = usePermission()
+  const canRoute = can('routing_forward', 'create')
+  const canUpdateDoc = can('documents_all', 'update')
   const { documents, updateDocument, addRoutingEntry, addRemark } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
 
   const doc = documents.find(d => d.id === id)
+  const canViewAllDocuments = user?.role === 'Super Admin'
+  const hasOfficeAccess = !!doc && !!user && (
+    canViewAllDocuments ||
+    doc.originOfficeId === user.officeId ||
+    doc.currentOfficeId === user.officeId ||
+    doc.routingHistory.some(entry => entry.fromOfficeId === user.officeId || entry.toOfficeId === user.officeId)
+  )
   const [showForwardDialog, setShowForwardDialog] = useState(false)
   const [showRemarkDialog, setShowRemarkDialog] = useState(false)
   const [remarkText, setRemarkText] = useState('')
@@ -48,6 +59,19 @@ export default function DocumentDetail() {
           <FileText className="w-16 h-16 text-slate-300 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-slate-900 mb-2">Document Not Found</h2>
           <p className="text-sm text-slate-500 mb-4">The requested document could not be found.</p>
+          <Button onClick={() => navigate('/documents')}>← Back to Documents</Button>
+        </div>
+      </div>
+    )
+  }
+
+  if (!hasOfficeAccess) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-center">
+          <Lock className="w-16 h-16 text-slate-300 mx-auto mb-4" />
+          <h2 className="text-xl font-bold text-slate-900 mb-2">Access Restricted</h2>
+          <p className="text-sm text-slate-500 mb-4">You can only view documents from your office or department.</p>
           <Button onClick={() => navigate('/documents')}>← Back to Documents</Button>
         </div>
       </div>
@@ -175,10 +199,10 @@ export default function DocumentDetail() {
 
       {/* Action Buttons */}
       <div className="flex flex-wrap gap-2">
-        <Button onClick={() => setShowForwardDialog(true)}><Send className="w-4 h-4 mr-2" />Forward/Route</Button>
-        <Button variant="outline" onClick={() => setShowRemarkDialog(true)}><MessageSquare className="w-4 h-4 mr-2" />Add Remark</Button>
+        {canRoute && <Button onClick={() => setShowForwardDialog(true)}><Send className="w-4 h-4 mr-2" />Forward/Route</Button>}
+        {canUpdateDoc && <Button variant="outline" onClick={() => setShowRemarkDialog(true)}><MessageSquare className="w-4 h-4 mr-2" />Add Remark</Button>}
         <Button variant="outline"><Printer className="w-4 h-4 mr-2" />Print</Button>
-        {!['Completed', 'Cancelled'].includes(doc.status) && (
+        {canUpdateDoc && !['Completed', 'Cancelled'].includes(doc.status) && (
           <>
             <Button variant="success" size="sm" onClick={() => updateDocument(doc.id, { status: 'Completed' })}><CheckCircle className="w-4 h-4 mr-2" />Mark Complete</Button>
             <Button variant="secondary" size="sm" onClick={() => updateDocument(doc.id, { status: 'On Hold' })}><Pause className="w-4 h-4 mr-2" />On Hold</Button>

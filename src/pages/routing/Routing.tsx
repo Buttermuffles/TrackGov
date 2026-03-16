@@ -21,8 +21,12 @@ import {
   Send, RefreshCw, Search, FileText, ArrowRight, CheckCircle,
   Clock, AlertTriangle, Filter, MailOpen, MapPin, Eye
 } from 'lucide-react'
+import { usePermission } from '@/hooks/usePermission'
 
 export default function Routing() {
+  const { can } = usePermission()
+  const canRoute = can('routing_forward', 'create')
+  const canAcknowledge = can('routing_forward', 'update')
   const user = useAuthStore(s => s.currentUser)
   const { documents, addRoutingEntry, acknowledgeDocument } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
@@ -242,9 +246,9 @@ export default function Routing() {
                             <Link to={`/documents/${doc.id}`}>
                               <Button variant="ghost" size="sm"><Eye className="w-4 h-4" /></Button>
                             </Link>
-                            <Button size="sm" onClick={() => openRouteDialog(doc.id)}>
+                            {canRoute && <Button size="sm" onClick={() => openRouteDialog(doc.id)}>
                               <Send className="w-3.5 h-3.5 mr-1" />Route
-                            </Button>
+                            </Button>}
                           </div>
                         </div>
                       )
@@ -284,7 +288,7 @@ export default function Routing() {
                           </p>
                           {pendingEntry.remarks && <p className="text-xs text-slate-600 mt-1 italic">"{pendingEntry.remarks}"</p>}
                         </div>
-                        <Button size="sm" variant="success" onClick={() => handleAcknowledge(doc.id, pendingEntry.id)}>
+                        <Button size="sm" variant="success" onClick={() => handleAcknowledge(doc.id, pendingEntry.id)} disabled={!canAcknowledge}>
                           <CheckCircle className="w-3.5 h-3.5 mr-1" />Acknowledge
                         </Button>
                       </div>
