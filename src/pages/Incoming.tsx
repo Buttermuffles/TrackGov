@@ -1,18 +1,17 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuthStore, useDocumentStore, useOfficeStore, useUserStore } from '@/store'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Plus, Search, Check, ArrowRight, MessageSquare, FileText, ChevronLeft, ChevronRight, Eye } from 'lucide-react'
-import { format, differenceInDays } from 'date-fns'
+import { Plus, Search, Check, FileText, ChevronLeft, ChevronRight, Eye, LayoutGrid, LayoutList } from 'lucide-react'
+import { format } from 'date-fns'
 import { recognize } from 'tesseract.js'
 import type { Document, DocumentType, Classification } from '@/types'
 import { formatFileSize } from '@/lib/utils'
@@ -28,12 +27,14 @@ type PendingAttachment = {
 
 export default function Incoming() {
   const user = useAuthStore(s => s.currentUser)
-  const { documents, addDocument, acknowledgeDocument, addRoutingEntry } = useDocumentStore()
+  const { documents, addDocument, addRoutingEntry } = useDocumentStore()
   const offices = useOfficeStore(s => s.offices)
   const users = useUserStore(s => s.users)
+  const currentOffice = offices.find(o => o.id === user?.officeId)
   const [searchParams] = useSearchParams()
   const [search, setSearch] = useState(searchParams.get('search')?.trim() ?? '')
   const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [view, setView] = useState<'table' | 'card'>('table')
   const [showReceiveForm, setShowReceiveForm] = useState(false)
   const [page, setPage] = useState(1)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
@@ -66,8 +67,6 @@ export default function Incoming() {
     if (user?.role === 'Super Admin') return getUserName(d.originatorId)
     return getOfficeName(d.originOfficeId)
   }
-  const isUnacknowledged = (d: Document) => d.routingHistory.some(rh => rh.toOfficeId === user?.officeId && !rh.isAcknowledged)
-
   // Receive form state
   const [formData, setFormData] = useState({
     title: '', documentType: 'Letter' as DocumentType, referenceNumber: '', classification: 'Routine' as Classification,
@@ -213,9 +212,33 @@ export default function Incoming() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl lg:text-2xl font-bold text-slate-900 tracking-tight">Incoming Documents</h1>
-          <p className="text-sm text-slate-500 mt-1">Documents routed to your office</p>
+          <p className="text-sm text-slate-500 mt-1">
+            Documents routed to your office{currentOffice ? ` — ${currentOffice.code} / ${currentOffice.name}` : ''}
+          </p>
         </div>
-        <Button onClick={() => setShowReceiveForm(true)}><Plus className="w-4 h-4 mr-2" />Receive New Document</Button>
+        <div className="flex items-center gap-2">
+          <div className="flex border rounded-md overflow-hidden">
+            <button
+              type="button"
+              className={"p-2 " + (view === 'table' ? 'bg-slate-100 text-slate-900' : 'text-slate-500')}
+              onClick={() => setView('table')}
+              aria-label="Table view"
+              title="Table view"
+            >
+              <LayoutList className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              className={"p-2 " + (view === 'card' ? 'bg-slate-100 text-slate-900' : 'text-slate-500')}
+              onClick={() => setView('card')}
+              aria-label="Card view"
+              title="Card view"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+          </div>
+          <Button onClick={() => setShowReceiveForm(true)}><Plus className="w-4 h-4 mr-2" />Receive New Document</Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -235,61 +258,85 @@ export default function Incoming() {
         </Select>
       </div>
 
-      {/* Table */}
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tracking Code</TableHead>
-                  <TableHead className="hidden md:table-cell">Title</TableHead>
-                  <TableHead className="hidden lg:table-cell">Type</TableHead>
-                  <TableHead className="hidden sm:table-cell">From</TableHead>
-                  <TableHead className="hidden xl:table-cell">Date Received</TableHead>
-                  <TableHead>Origin</TableHead>
-                  <TableHead className="hidden lg:table-cell">Routing History</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedDocs.length === 0 ? (
+      {/* Documents list */}
+      {view === 'table' ? (
+        <Card>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-                      <p className="text-sm text-slate-400">No incoming documents found</p>
-                    </TableCell>
+                    <TableHead>Tracking Code</TableHead>
+                    <TableHead className="hidden md:table-cell">Title</TableHead>
+                    <TableHead className="hidden lg:table-cell">Type</TableHead>
+                    <TableHead className="hidden sm:table-cell">From</TableHead>
+                    <TableHead className="hidden xl:table-cell">Date Received</TableHead>
+                    <TableHead>Origin</TableHead>
                   </TableRow>
-                ) : (
-                  paginatedDocs.map(doc => (
-                    <TableRow key={doc.id} className={`${isUnacknowledged(doc) ? 'bg-blue-50 font-medium' : ''}`}>
-                      <TableCell>
-                        <Link to={`/documents/${doc.id}`} className="font-mono text-xs text-blue-700 hover:underline font-bold">{doc.trackingCode}</Link>
-                        <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
-                      <TableCell className="hidden lg:table-cell"><Badge variant="secondary" className="text-[10px]">{doc.documentType}</Badge></TableCell>
-                      <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
-                      <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
-                      <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-xs">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="text-[10px]">{doc.routingHistory.length} steps</Badge>
-                          <Link to={`/documents/${doc.id}`}><Button variant="ghost" size="sm" className="h-7 text-xs">View</Button></Link>
-                          {isUnacknowledged(doc) && (
-                            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => {
-                              const entry = doc.routingHistory.find(rh => rh.toOfficeId === user?.officeId && !rh.isAcknowledged)
-                              if (entry) acknowledgeDocument(doc.id, entry.id)
-                            }}><Check className="w-3 h-3 mr-1" />Ack</Button>
-                          )}
-                        </div>
+                </TableHeader>
+                <TableBody>
+                  {paginatedDocs.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center py-12">
+                        <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                        <p className="text-sm text-slate-400">No incoming documents found</p>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
+                  ) : (
+                    paginatedDocs.map(doc => (
+                      <TableRow key={doc.id}>
+                        <TableCell>
+                          <Link to={`/documents/${doc.id}`} className="font-mono text-xs text-sky-700 hover:underline font-bold">{doc.trackingCode}</Link>
+                          <p className="md:hidden text-xs text-slate-500 mt-0.5 truncate max-w-37.5">{doc.title}</p>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell max-w-50"><p className="truncate text-sm">{doc.title}</p></TableCell>
+                        <TableCell className="hidden lg:table-cell"><Badge variant="secondary" className="text-[10px]">{doc.documentType}</Badge></TableCell>
+                        <TableCell className="hidden sm:table-cell text-xs">{getOfficeName(doc.originOfficeId)}</TableCell>
+                        <TableCell className="hidden xl:table-cell text-xs">{format(new Date(doc.dateReceived), 'MMM d, yyyy')}</TableCell>
+                        <TableCell className="text-xs">{getOriginDisplay(doc)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between border-t p-3">
+                <p className="text-xs text-slate-500">Showing {(page - 1) * perPage + 1}-{Math.min(page * perPage, incomingDocs.length)} of {incomingDocs.length}</p>
+                <div className="flex gap-1">
+                  <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}><ChevronLeft className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}><ChevronRight className="w-4 h-4" /></Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {paginatedDocs.map(doc => (
+              <Link key={doc.id} to={`/documents/${doc.id}`} className="block">
+                <Card className="h-full hover:shadow-md transition">
+                  <CardContent className="p-4 space-y-2">
+                    <div className="flex items-start justify-between">
+                      <p className="font-mono text-xs text-sky-700 font-semibold">{doc.trackingCode}</p>
+                      <Badge variant="outline" className="text-[10px]">{doc.documentType}</Badge>
+                    </div>
+                    <h3 className="text-sm font-semibold line-clamp-2">{doc.title}</h3>
+                    <p className="text-xs text-slate-500">From: {getOriginDisplay(doc)}</p>
+                    <p className="text-xs text-slate-500">Received: {format(new Date(doc.dateReceived), 'MMM d, yyyy')}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
           </div>
-          {/* Pagination */}
+          {paginatedDocs.length === 0 && (
+            <div className="text-center py-12">
+              <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+              <p className="text-sm text-slate-400">No incoming documents found</p>
+            </div>
+          )}
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t p-3">
               <p className="text-xs text-slate-500">Showing {(page - 1) * perPage + 1}-{Math.min(page * perPage, incomingDocs.length)} of {incomingDocs.length}</p>
@@ -299,8 +346,8 @@ export default function Incoming() {
               </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </>
+      )}
 
       {/* Receive Document Dialog */}
       <Dialog open={showReceiveForm} onOpenChange={setShowReceiveForm}>
